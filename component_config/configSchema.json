@@ -1,19 +1,30 @@
 {
   "type": "object",
-  "title": "extractor configuration",
+  "title": "Component configuration",
   "required": [
-    "print_hello"
+    "credentials"
   ],
   "properties": {
-    "print_hello": {
-      "type": "boolean",
-      "title": "Print Hello",
+    "credentials": {
+      "type": "object",
+      "title": "Authorization",
+      "required": [
+        "#api_token"
+      ],
+      "properties": {
+        "email": {
+          "type": "string",
+          "title": "Email",
+          "propertyOrder": 1
+        },
+        "#password": {
+          "type": "string",
+          "format": "password",
+          "title": "Password",
+          "propertyOrder": 2
+        }
+      },
       "propertyOrder": 1
-    },
-    "debug": {
-      "type": "boolean",
-      "title": "Debug",
-      "propertyOrder": 2
     }
   }
 }

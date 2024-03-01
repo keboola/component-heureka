@@ -1,5 +1,6 @@
-keboola.component
-keboola.utils
-keboola.http-client
-mock
-freezegun
+keboola.component==1.4.4
+keboola.utils==1.1.0
+keboola.http-client==1.0.0
+mock==5.1.0
+freezegun==1.4.0
+dataconf==2.5.0

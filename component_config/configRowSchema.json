@@ -1,1 +1,55 @@
-{}
+{
+  "type": "object",
+  "title": "Configuration Parameters",
+  "required": [
+    "report_settings"
+  ],
+  "properties": {
+    "report_settings": {
+      "title": "Report Settings",
+      "type": "object",
+      "propertyOrder": 2,
+      "required": [
+        "eshop_id",
+        "date_from",
+        "date_to"
+      ],
+      "properties": {
+        "eshop_id": {
+          "title": "Eshop ID",
+          "type": "string",
+          "required": true,
+          "propertyOrder": 1,
+          "description": "ID of the eshop for which you want to download report."
+        },
+        "date_from": {
+          "type": "string",
+          "title": "Date From",
+          "default": "1 week ago",
+          "description": "Start date of the report. Either date in YYYY-MM-DD format or dateparser string i.e. 5 days ago, 1 month ago, yesterday, etc.",
+          "propertyOrder": 2
+        },
+        "date_to": {
+          "type": "string",
+          "title": "Date to",
+          "default": "now",
+          "description": "End date of the report. Either date in YYYY-MM-DD format or dateparser string i.e. 5 days ago, 1 month ago, yesterday, etc.",
+          "propertyOrder": 3
+        }
+      }
+    },
+    "destination": {
+      "title": "Destination",
+      "type": "object",
+      "propertyOrder": 3,
+      "properties": {
+        "table_name": {
+          "type": "string",
+          "title": "Table name (optional)",
+          "description": "The name of the output table; if empty, it defaults to the row configuration ID and the endpoint name.",
+          "propertyOrder": 1
+        }
+      }
+    }
+  }
+}
