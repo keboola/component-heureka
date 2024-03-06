@@ -48,7 +48,7 @@ class ConfigurationBase:
 @dataclass
 class Credentials(ConfigurationBase):
     email: str = ""
-    psd_password: str = ""
+    pswd_password: str = ""
 
 
 @dataclass
@@ -61,6 +61,7 @@ class ReportSettings(ConfigurationBase):
 @dataclass
 class Destination(ConfigurationBase):
     table_name: str = ""
+    incremental_load: bool = True
 
 
 @dataclass
@@ -68,3 +69,4 @@ class Configuration(ConfigurationBase):
     credentials: Credentials
     report_settings: ReportSettings
     destination: Destination
+    country: str = ""

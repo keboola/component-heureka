@@ -2,42 +2,23 @@
 Template Component main class.
 
 """
-import csv
 import logging
-from datetime import datetime
-
 from keboola.component.base import ComponentBase
 from keboola.component.exceptions import UserException
-
 from configuration import Configuration
-
-# configuration variables
-KEY_API_TOKEN = '#api_token'
-KEY_PRINT_HELLO = 'print_hello'
-
-# list of mandatory parameters => if some is missing,
-# component will fail with readable message on initialization.
-REQUIRED_PARAMETERS = [KEY_PRINT_HELLO]
-REQUIRED_IMAGE_PARS = []
+from requests_html import HTMLSession
+from keboola.utils import parse_datetime_interval, split_dates_to_chunks
+from keboola.csvwriter import ElasticDictWriter
 
 
 class Component(ComponentBase):
-    """
-        Extends base class for general Python components. Initializes the CommonInterface
-        and performs configuration validation.
-
-        For easier debugging the data folder is picked up by default from `../data` path,
-        relative to working directory.
-
-        If `debug` parameter is present in the `config.json`, the default logger is set to verbose DEBUG mode.
-    """
 
     def __init__(self):
         super().__init__()
 
     def _init_configuration(self) -> None:
         self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
-        self._configuration: Configuration = Configuration.load_from_dict(self.configuration.parameters)
+        self.cfg: Configuration = Configuration.load_from_dict(self.configuration.parameters)
 
     def run(self):
         """
@@ -46,7 +27,75 @@ class Component(ComponentBase):
 
         self._init_configuration()
 
-        logging.info("Hello!")
+        eshop_id = self.cfg.report_settings.eshop_id
+        date_from, date_to = parse_datetime_interval(self.cfg.report_settings.date_from,
+                                                     self.cfg.report_settings.date_to)
+        dates = split_dates_to_chunks(date_from, date_to, 0)
+
+        session = HTMLSession()
+
+        if self.cfg.country == "cz":
+            url = f'https://account.heureka.cz/auth/login?hanoi-service=loginweb-gcp&redirect_uri=https%3A%2F%2Fauth.heureka.cz%2Fapi%2Fopenidconnect%2Fauthorize%3Fresponse_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%26client_id%3Dheureka.cz%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.cz%252Fobchody%252F'  # noqa
+            data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
+        else:
+            raise UserException("Country not supported")
+
+        response = session.post(url, data=data)
+
+        if response.status_code != 200:
+            raise UserException(f"Login failed: {response.status_code}")
+
+        logging.info("Login successful")
+
+        table_name = self.cfg.destination.table_name or eshop_id
+
+        table_def = self.create_out_table_definition(name=f'{table_name}.csv',
+                                                     incremental=self.cfg.destination.incremental_load,
+                                                     primary_key=['eshop_id', 'date'])
+
+        with ElasticDictWriter(table_def.full_path, fieldnames=['eshop_id', 'date']) as writer:
+            writer.writeheader()
+
+            for date in dates:
+                stats = self.get_stats_for_date(session, date, eshop_id)
+                writer.writerow(stats)
+
+        self.write_manifest(table_def)
+
+    @staticmethod
+    def get_stats_for_date(session, date, eshop_id):
+        response = session.get('https://sluzby.heureka.cz/obchody/statistiky/'
+                               f'?from={date["start_date"]}&to={date["start_date"]}&shop={eshop_id}&cat=-4')
+
+        column_names = [th.text for th in response.html.find('thead', first=True).find('tr')[1].find('th')]
+        table_body = response.html.find('tbody', first=True)
+
+        columns_mapping = {
+            'NÃ¡vÅ¡tÄ\x9bvy': 'visits',
+            'CPC': 'cpc',
+            'NÃ¡klady': 'spend',
+            'KonverznÃ­ pomÄ\x9br': 'conversion_rates',
+            'Obj': 'orders',
+            'PrÅ¯mÄ\x9brnÃ¡ objednÃ¡vka': 'aov',
+            'Obrat': 'transaction_revenue',
+            'NÃ¡klady zÂ obratu': 'pno',
+        }
+
+        if table_body:
+
+            values = [value.text.replace('Â\xa0KÄ\x8d', '').replace('%', '')
+                      for value in table_body.find('tr')[0].find('td')]
+
+            row = {'eshop_id': eshop_id, 'date': date["start_date"]}
+
+            if values[0] == 'Celkem1':
+                logging.warning("No data available for the selected period")
+            else:
+                for column_name, value in zip(column_names, values):
+                    if key := columns_mapping.get(column_name):
+                        row[key] = value
+
+            return row
 
 
 """

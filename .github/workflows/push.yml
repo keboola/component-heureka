@@ -3,7 +3,7 @@ on: [ push ]
 concurrency: ci-${{ github.ref }} # to avoid tag collisions in the ECR
 env:
   DOCKERHUB_USER: "keboolabot"
-  KBC_DEVELOPERPORTAL_APP: "component-heureka"
+  KBC_DEVELOPERPORTAL_APP: "kds-team.ex-heureka"
   KBC_DEVELOPERPORTAL_VENDOR: "kds-team"
   KBC_DEVELOPERPORTAL_USERNAME: "kds-team+github"
 
