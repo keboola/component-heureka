@@ -46,8 +46,26 @@
         "table_name": {
           "type": "string",
           "title": "Table name (optional)",
-          "description": "The name of the output table; if empty, it defaults to the row configuration ID and the endpoint name.",
+          "description": "The name of the output table; if empty, it defaults to the shop id.",
           "propertyOrder": 1
+        },
+        "load_type": {
+          "enum": [
+            "full_load",
+            "incremental_load"
+          ],
+          "type": "string",
+          "title": "Load Type",
+          "format": "checkbox",
+          "default": "full_load",
+          "options": {
+            "enum_titles": [
+              "Full Load",
+              "Incremental Load"
+            ]
+          },
+          "description": "If Full load is used, the destination table will be overwritten every run. If incremental load is used, data will be upserted into the destination table.",
+          "propertyOrder": 2
         }
       }
     }

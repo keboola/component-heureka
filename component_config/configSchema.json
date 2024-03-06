@@ -9,7 +9,8 @@
       "type": "object",
       "title": "Authorization",
       "required": [
-        "#api_token"
+        "email",
+        "#password"
       ],
       "properties": {
         "email": {
@@ -25,6 +26,17 @@
         }
       },
       "propertyOrder": 1
+    },
+    "country": {
+      "type": "string",
+      "title": "Data to extract",
+      "propertyOrder": 2,
+      "description": "Select from which Heureka site you want to extract data.",
+      "enum": [
+        "cz",
+        "sk"
+      ],
+      "default": "cz"
     }
   }
 }

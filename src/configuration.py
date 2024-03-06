@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 from typing import List
 import dataconf
+from enum import Enum
 
 
 class ConfigurationBase:
@@ -45,10 +46,18 @@ class ConfigurationBase:
                 ]
 
 
+class LoadType(str, Enum):
+    full_load = "full_load"
+    incremental_load = "incremental_load"
+
+    def is_incremental(self) -> bool:
+        return self.value == self.incremental_load
+
+
 @dataclass
 class Credentials(ConfigurationBase):
     email: str = ""
-    psd_password: str = ""
+    pswd_password: str = ""
 
 
 @dataclass
@@ -61,6 +70,7 @@ class ReportSettings(ConfigurationBase):
 @dataclass
 class Destination(ConfigurationBase):
     table_name: str = ""
+    load_type: LoadType = "incremental_load"
 
 
 @dataclass
@@ -68,3 +78,4 @@ class Configuration(ConfigurationBase):
     credentials: Credentials
     report_settings: ReportSettings
     destination: Destination
+    country: str = ""
