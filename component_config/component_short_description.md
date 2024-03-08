@@ -1,1 +1,1 @@
-Heureka short description
+Heureka is a popular e-commerce and price comparison platform.

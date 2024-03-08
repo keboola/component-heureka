@@ -37,6 +37,9 @@ class Component(ComponentBase):
         if self.cfg.country == "cz":
             url = f'https://account.heureka.cz/auth/login?hanoi-service=loginweb-gcp&redirect_uri=https%3A%2F%2Fauth.heureka.cz%2Fapi%2Fopenidconnect%2Fauthorize%3Fresponse_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%26client_id%3Dheureka.cz%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.cz%252Fobchody%252F'  # noqa
             data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
+        elif self.cfg.country == "sk":
+            url = f'https://account.heureka.sk/auth/login?hanoi-service=loginweb-gcp&redirect_uri=https%3A%2F%2Fauth.heureka.sk%2Fapi%2Fopenidconnect%2Fauthorize%3Fresponse_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%26client_id%3Dheureka.sk%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.sk%252Fobchody%252F'  # noqa
+            data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
         else:
             raise UserException("Country not supported")
 
@@ -53,7 +56,9 @@ class Component(ComponentBase):
                                                      incremental=self.cfg.destination.load_type.is_incremental(),
                                                      primary_key=['eshop_id', 'date'])
 
-        with ElasticDictWriter(table_def.full_path, fieldnames=['eshop_id', 'date']) as writer:
+        with (ElasticDictWriter(table_def.full_path, fieldnames=['eshop_id', 'date', 'pno', 'conversion_rates',
+                                                                 'spend', 'aov', 'cpc', 'orders',
+                                                                 'visits', 'transaction_revenue']) as writer):
             writer.writeheader()
 
             for date in dates:
@@ -62,33 +67,48 @@ class Component(ComponentBase):
 
         self.write_manifest(table_def)
 
-    @staticmethod
-    def get_stats_for_date(session, date, eshop_id):
-        response = session.get('https://sluzby.heureka.cz/obchody/statistiky/'
-                               f'?from={date["start_date"]}&to={date["start_date"]}&shop={eshop_id}&cat=-4')
+    def get_stats_for_date(self, session, date, eshop_id):
+        if self.cfg.country == "cz":
+            response = session.get('https://sluzby.heureka.cz/obchody/statistiky/'
+                                   f'?from={date["start_date"]}&to={date["start_date"]}&shop={eshop_id}&cat=-4')
+
+            columns_mapping = {
+                'NÃ¡vÅ¡tÄ\x9bvy': 'visits',
+                'CPC': 'cpc',
+                'NÃ¡klady': 'spend',
+                'KonverznÃ­ pomÄ\x9br': 'conversion_rates',
+                'Obj': 'orders',
+                'PrÅ¯mÄ\x9brnÃ¡ objednÃ¡vka': 'aov',
+                'Obrat': 'transaction_revenue',
+                'NÃ¡klady zÂ obratu': 'pno',
+            }
+
+        else:
+            response = session.get('https://sluzby.heureka.sk/obchody/statistiky/'
+                                   f'?from={date["start_date"]}&to={date["start_date"]}&shop={eshop_id}&cat=-4')
+
+            columns_mapping = {
+                'NÃ¡vÅ¡tevy': 'visits',
+                'CPC': 'cpc',
+                'NÃ¡klady': 'spend',
+                'KonverznÃ½ pomer': 'conversion_rates',
+                'Obj': 'orders',
+                'PriemernÃ¡ objednÃ¡vka': 'aov',
+                'Obrat': 'transaction_revenue',
+                'NÃ¡klady zÂ obratu': 'pno',
+            }
 
         column_names = [th.text for th in response.html.find('thead', first=True).find('tr')[1].find('th')]
         table_body = response.html.find('tbody', first=True)
 
-        columns_mapping = {
-            'NÃ¡vÅ¡tÄ\x9bvy': 'visits',
-            'CPC': 'cpc',
-            'NÃ¡klady': 'spend',
-            'KonverznÃ­ pomÄ\x9br': 'conversion_rates',
-            'Obj': 'orders',
-            'PrÅ¯mÄ\x9brnÃ¡ objednÃ¡vka': 'aov',
-            'Obrat': 'transaction_revenue',
-            'NÃ¡klady zÂ obratu': 'pno',
-        }
-
         if table_body:
 
-            values = [value.text.replace('Â\xa0KÄ\x8d', '').replace('%', '')
+            values = [value.text.replace('Â\xa0KÄ\x8d', '').replace('Â â\x82¬', '').replace('%', '')
                       for value in table_body.find('tr')[0].find('td')]
 
             row = {'eshop_id': eshop_id, 'date': date["start_date"]}
 
-            if values[0] == 'Celkem1':
+            if values[0] == 'Celkem':
                 logging.warning("No data available for the selected period")
             else:
                 for column_name, value in zip(column_names, values):

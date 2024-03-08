@@ -10,42 +10,17 @@ Description
 Functionality notes
 ===================
 
-Prerequisites
-=============
-
-Get the API token, register application, etc.
-
-Features
-========
-
-| **Feature**             | **Note**                                      |
-|-------------------------|-----------------------------------------------|
-| Generic UI form         | Dynamic UI form                               |
-| Row Based configuration | Allows structuring the configuration in rows. |
-| oAuth                   | oAuth authentication enabled                  |
-| Incremental loading     | Allows fetching data in new increments.       |
-| Backfill mode           | Support for seamless backfill setup.          |
-| Date range filter       | Specify date range.                           |
-
-Supported endpoints
-===================
-
-If you need more endpoints, please submit your request to
-[ideas.keboola.com](https://ideas.keboola.com/)
 
 Configuration
 =============
 
-Param 1
--------
-
-Param 2
--------
+First, in the component configuration below, fill in the credentials.
+Then in the config row, specify the e-shop ID, date for which you want to retrieve the data, and destination table settings.
 
 Output
 ======
 
-List of tables, foreign keys, schema.
+Output table contains the following columns: eshop_id,date,pno,conversion_rates,spend,aov,cpc,orders,visits,transaction_revenue
 
 Development
 -----------

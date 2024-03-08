@@ -29,7 +29,7 @@
     },
     "country": {
       "type": "string",
-      "title": "Data to extract",
+      "title": "Heureka Site Country",
       "propertyOrder": 2,
       "description": "Select from which Heureka site you want to extract data.",
       "enum": [
