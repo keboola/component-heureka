@@ -9,6 +9,7 @@ from configuration import Configuration
 from requests_html import HTMLSession
 from keboola.utils import parse_datetime_interval, split_dates_to_chunks
 from keboola.csvwriter import ElasticDictWriter
+import datetime
 
 
 class Component(ComponentBase):
@@ -30,6 +31,11 @@ class Component(ComponentBase):
         eshop_id = self.cfg.report_settings.eshop_id
         date_from, date_to = parse_datetime_interval(self.cfg.report_settings.date_from,
                                                      self.cfg.report_settings.date_to)
+
+        if (datetime.datetime.now() - date_from).days > 365:
+            print("Cannot get data older than 1 year, downloading data for the last 365 days.")
+            date_from = datetime.datetime.now() - datetime.timedelta(days=365)
+
         dates = split_dates_to_chunks(date_from, date_to, 0)
 
         session = HTMLSession()
@@ -104,6 +110,7 @@ class Component(ComponentBase):
         if table_body:
 
             values = [value.text.replace('Â\xa0KÄ\x8d', '').replace('Â â\x82¬', '').replace('%', '')
+                      .replace('Â', '').replace(' ', '').replace('&nbsp', '').replace(' ', '')
                       for value in table_body.find('tr')[0].find('td')]
 
             row = {'eshop_id': eshop_id, 'date': date["start_date"]}
