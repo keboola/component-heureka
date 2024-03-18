@@ -10,6 +10,10 @@ Description
 Functionality notes
 ===================
 
+**NOTICE!**
+- The data from the past 30 days may be incomplete.
+- The data of the previous day becomes available on the following day.
+- Due to the introduction of mandatory consent for storing cookies, measured conversions and revenues on your e-shop may be lower by up to 30% than actual orders.
 
 Configuration
 =============
