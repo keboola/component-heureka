@@ -43,13 +43,19 @@ class Component(ComponentBase):
         if self.cfg.country == "cz":
             url = f'https://account.heureka.cz/auth/login?hanoi-service=loginweb-gcp&redirect_uri=https%3A%2F%2Fauth.heureka.cz%2Fapi%2Fopenidconnect%2Fauthorize%3Fresponse_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%26client_id%3Dheureka.cz%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.cz%252Fobchody%252F'  # noqa
             data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
+
+            session.post(url, data=data)
+            response = session.get('https://auth.heureka.cz/api/openidconnect/authorize?client_id=heureka.cz&response_type=code&scope=tenant%3Aheureka-group+cookie+userinfo%3A%2A+profile%3AHEU-CZ&redirect_uri=https%3A%2F%2Faccount.heureka.cz%2F') # noqa
+
         elif self.cfg.country == "sk":
             url = f'https://account.heureka.sk/auth/login?hanoi-service=loginweb-gcp&redirect_uri=https%3A%2F%2Fauth.heureka.sk%2Fapi%2Fopenidconnect%2Fauthorize%3Fresponse_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%26client_id%3Dheureka.sk%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.sk%252Fobchody%252F'  # noqa
             data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
+
+            session.post(url, data=data)
+            response = session.get('https://auth.heureka.sk/api/openidconnect/authorize?client_id=heureka.sk&response_type=code&scope=tenant%3Aheureka-group+cookie+userinfo%3A%2A+profile%3AHEU-SK&redirect_uri=https%3A%2F%2Fwww.heureka.sk%2F') # noqa
+
         else:
             raise UserException("Country not supported")
-
-        response = session.post(url, data=data)
 
         if response.status_code != 200:
             raise UserException(f"Login failed: {response.status_code}")
