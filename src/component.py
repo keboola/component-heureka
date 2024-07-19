@@ -41,14 +41,14 @@ class Component(ComponentBase):
         session = HTMLSession()
 
         if self.cfg.country == "cz":
-            url = f'https://account.heureka.cz/auth/login?hanoi-service=loginweb-gcp&redirect_uri=https%3A%2F%2Fauth.heureka.cz%2Fapi%2Fopenidconnect%2Fauthorize%3Fresponse_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%26client_id%3Dheureka.cz%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.cz%252Fobchody%252F'  # noqa
+            url = 'https://account.heureka.cz/auth/login?redirect_uri=https%3A%2F%2Fauth.heureka.cz%2Fapi%2Fopenidconnect%2Fauthorize%3Fclient_id%3Dheureka.cz%26response_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%2Bprofile%253AHEU-CZ%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.cz%252Fobchody%252F&client_id=heureka.cz' # noqa
             data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
 
             session.post(url, data=data)
             response = session.get('https://auth.heureka.cz/api/openidconnect/authorize?client_id=heureka.cz&response_type=code&scope=tenant%3Aheureka-group+cookie+userinfo%3A%2A+profile%3AHEU-CZ&redirect_uri=https%3A%2F%2Faccount.heureka.cz%2F') # noqa
 
         elif self.cfg.country == "sk":
-            url = f'https://account.heureka.sk/auth/login?hanoi-service=loginweb-gcp&redirect_uri=https%3A%2F%2Fauth.heureka.sk%2Fapi%2Fopenidconnect%2Fauthorize%3Fresponse_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%26client_id%3Dheureka.sk%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.sk%252Fobchody%252F'  # noqa
+            url = 'https://account.heureka.sk/auth/login?redirect_uri=https%3A%2F%2Fauth.heureka.sk%2Fapi%2Fopenidconnect%2Fauthorize%3Fclient_id%3Dheureka.sk%26response_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%2Bprofile%253AHEU-SK%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.sk%252Fobchody%252F&client_id=heureka.sk' # noqa
             data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
 
             session.post(url, data=data)
