@@ -102,7 +102,7 @@ class Component(ComponentBase):
         else:
             response = session.get('https://sluzby.heureka.sk/obchody/statistiky/'
                                    f'?from={date["start_date"]}&to={date["start_date"]}&shop={eshop_id}&cat=-4')
-            logging.debug(response.text)
+            logging.debug(response.status_code)
             columns_mapping = {
                 'NÃ¡vÅ¡tevy': 'visits',
                 'CPC': 'cpc',
@@ -113,11 +113,13 @@ class Component(ComponentBase):
                 'Obrat': 'transaction_revenue',
                 'NÃ¡klady zÂ obratu': 'pno',
             }
+        logging.debug("Parsing response")
 
         column_names = [th.text for th in response.html.find('thead', first=True).find('tr')[1].find('th')]
         table_body = response.html.find('tbody', first=True)
 
         if table_body:
+            logging.debug("Table body found")
 
             values = [value.text.replace('Â\xa0KÄ\x8d', '').replace('Â â\x82¬', '').replace('%', '')
                       .replace('Â', '').replace(' ', '').replace('&nbsp', '').replace(' ', '')
