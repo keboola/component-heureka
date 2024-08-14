@@ -55,7 +55,8 @@ class Component(ComponentBase):
 
             session.post(url, data=data)
             # response = session.get('https://auth.heureka.sk/api/openidconnect/authorize?client_id=heureka.sk&response_type=code&scope=tenant%3Aheureka-group+cookie+userinfo%3A%2A+profile%3AHEU-SK&redirect_uri=https%3A%2F%2Fwww.heureka.sk%2F')  # noqa
-            response = session.get('https://auth.heureka.sk/api/openidconnect/authorize')
+            response = session.get(
+                'https://auth.heureka.sk/api/openidconnect/authorize?client_id=heureka.sk&response_type=code')
             # print(response.text)
         else:
             raise UserException("Country not supported")
