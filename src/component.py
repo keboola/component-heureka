@@ -41,12 +41,13 @@ class Component(ComponentBase):
         session = HTMLSession()
 
         if self.cfg.country == "cz":
-            url = 'https://account.heureka.cz/auth/login?redirect_uri=https%3A%2F%2Fauth.heureka.cz%2Fapi%2Fopenidconnect%2Fauthorize%3Fclient_id%3Dheureka.cz%26response_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%2Bprofile%253AHEU-CZ%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.cz%252Fobchody%252F&client_id=heureka.cz'  # noqa
+           # url = 'https://account.heureka.cz/auth/login?redirect_uri=https%3A%2F%2Fauth.heureka.cz%2Fapi%2Fopenidconnect%2Fauthorize%3Fclient_id%3Dheureka.cz%26response_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%2Bprofile%253AHEU-CZ%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.cz%252Fobchody%252F&client_id=heureka.cz'  # noqa
+            url = 'https://account.heureka.cz/auth/login?client_id=heureka.cz&response_type=code'  # noqa
             data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
 
             session.post(url, data=data)
             response = session.get(
-                'https://auth.heureka.cz/api/openidconnect/authorize?client_id=heureka.cz&response_type=code&scope=tenant%3Aheureka-group+cookie+userinfo%3A%2A+profile%3AHEU-CZ&redirect_uri=https%3A%2F%2Faccount.heureka.cz%2F')  # noqa
+                'https://auth.heureka.cz/api/openidconnect/authorize?client_id=heureka.cz&response_type=code')  # noqa
 
         elif self.cfg.country == "sk":
             # url = 'https://account.heureka.sk/auth/login?redirect_uri=https%3A%2F%2Fauth.heureka.sk%2Fapi%2Fopenidconnect%2Fauthorize%3Fclient_id%3Dheureka.sk%26response_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%2Bprofile%253AHEU-SK%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.sk%252Fobchody%252F&client_id=heureka.sk' # noqa
@@ -57,7 +58,6 @@ class Component(ComponentBase):
             # response = session.get('https://auth.heureka.sk/api/openidconnect/authorize?client_id=heureka.sk&response_type=code&scope=tenant%3Aheureka-group+cookie+userinfo%3A%2A+profile%3AHEU-SK&redirect_uri=https%3A%2F%2Fwww.heureka.sk%2F')  # noqa
             response = session.get(
                 'https://auth.heureka.sk/api/openidconnect/authorize?client_id=heureka.sk&response_type=code')
-            # print(response.text)
         else:
             raise UserException("Country not supported")
 
@@ -88,6 +88,10 @@ class Component(ComponentBase):
             response = session.get('https://sluzby.heureka.cz/obchody/statistiky/'
                                    f'?from={date["start_date"]}&to={date["start_date"]}&shop={eshop_id}&cat=-4')
 
+            logging.debug(response.status_code)
+            for tag in response.html:
+                logging.debug(tag)
+
             columns_mapping = {
                 'NÃ¡vÅ¡tÄ\x9bvy': 'visits',
                 'CPC': 'cpc',
@@ -102,7 +106,11 @@ class Component(ComponentBase):
         else:
             response = session.get('https://sluzby.heureka.sk/obchody/statistiky/'
                                    f'?from={date["start_date"]}&to={date["start_date"]}&shop={eshop_id}&cat=-4')
+
             logging.debug(response.status_code)
+            for tag in response.html:
+                logging.debug(tag)
+
             columns_mapping = {
                 'NÃ¡vÅ¡tevy': 'visits',
                 'CPC': 'cpc',
@@ -113,6 +121,7 @@ class Component(ComponentBase):
                 'Obrat': 'transaction_revenue',
                 'NÃ¡klady zÂ obratu': 'pno',
             }
+
         logging.debug("Parsing response")
 
         column_names = [th.text for th in response.html.find('thead', first=True).find('tr')[1].find('th')]
