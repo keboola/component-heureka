@@ -58,7 +58,7 @@ class Component(ComponentBase):
             raise UserException("Country not supported")
 
         if response.status_code != 200:
-            raise UserException(f"Login failed: {response.status_code}")
+            raise UserException(f"Login failed: {response.status_code}, {response.text}")
 
         logging.info("Login successful")
 
