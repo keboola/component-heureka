@@ -50,7 +50,7 @@ class Component(ComponentBase):
 
         try:
             page.click('#didomi-notice-agree-button')
-        except Exception as e:
+        except Exception:
             logging.info("No cookies popup")
 
         if self.cfg.country == "cz":
