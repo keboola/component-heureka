@@ -11,6 +11,7 @@ from keboola.utils import parse_datetime_interval, split_dates_to_chunks
 from keboola.csvwriter import ElasticDictWriter
 import datetime
 from playwright.sync_api import sync_playwright
+import backoff
 
 
 class Component(ComponentBase):
@@ -89,11 +90,15 @@ class Component(ComponentBase):
 
             for date in dates:
                 logging.info(f"Downloading data for date: {date['start_date']}")
-                stats = self.get_stats_for_date(session, date, eshop_id)
-                writer.writerow(stats)
+                try:
+                    stats = self.get_stats_for_date(session, date, eshop_id)
+                    writer.writerow(stats)
+                except AttributeError as e:
+                    logging.warning(f"Error while downloading data for date: {date['start_date']}: {e}")
 
         self.write_manifest(table_def)
 
+    @backoff.on_exception(backoff.expo, AttributeError, max_tries=7)
     def get_stats_for_date(self, session, date, eshop_id):
         if self.cfg.country == "cz":
             response = session.get('https://sluzby.heureka.cz/obchody/statistiky/'
