@@ -17,6 +17,8 @@ RUN pip install flake8
 
 RUN pip install -r /code/requirements.txt
 
+RUN chmod 755 /tmp
+
 RUN playwright install --with-deps chromium
 
 WORKDIR /code/
