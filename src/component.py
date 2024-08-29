@@ -10,6 +10,8 @@ from requests_html import HTMLSession
 from keboola.utils import parse_datetime_interval, split_dates_to_chunks
 from keboola.csvwriter import ElasticDictWriter
 import datetime
+from playwright.sync_api import sync_playwright
+import backoff
 
 
 class Component(ComponentBase):
@@ -40,27 +42,40 @@ class Component(ComponentBase):
 
         session = HTMLSession()
 
-        if self.cfg.country == "cz":
-            url = 'https://account.heureka.cz/auth/login?redirect_uri=https%3A%2F%2Fauth.heureka.cz%2Fapi%2Fopenidconnect%2Fauthorize%3Fclient_id%3Dheureka.cz%26response_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%2Bprofile%253AHEU-CZ%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.cz%252Fobchody%252F&client_id=heureka.cz' # noqa
-            data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
+        p = sync_playwright().start()
+        browser = p.chromium.launch(headless=False)
+        context = browser.new_context()
+        page = context.new_page()
+        page.set_default_timeout(10000)
+        page.goto(f'https://heureka.{self.cfg.country}')
 
-            session.post(url, data=data)
-            response = session.get('https://auth.heureka.cz/api/openidconnect/authorize?client_id=heureka.cz&response_type=code&scope=tenant%3Aheureka-group+cookie+userinfo%3A%2A+profile%3AHEU-CZ&redirect_uri=https%3A%2F%2Faccount.heureka.cz%2F') # noqa
+        try:
+            page.click('#didomi-notice-agree-button')
+        except Exception:
+            logging.info("No cookies popup")
+
+        if self.cfg.country == "cz":
+            page.get_by_text('Administrace e-shopu').click()
+            page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20000)
+            page.fill('#login-email', self.cfg.credentials.email)
+            page.fill('#login-password', self.cfg.credentials.pswd_password)
+            page.click('button:has-text("Přihlásit se e-mailem")')
 
         elif self.cfg.country == "sk":
-            url = 'https://account.heureka.sk/auth/login?redirect_uri=https%3A%2F%2Fauth.heureka.sk%2Fapi%2Fopenidconnect%2Fauthorize%3Fclient_id%3Dheureka.sk%26response_type%3Dcode%26scope%3Dtenant%253Aheureka-group%2Bcookie%2Buserinfo%253A%252A%2Bprofile%253AHEU-SK%26redirect_uri%3Dhttps%253A%252F%252Fsluzby.heureka.sk%252Fobchody%252F&client_id=heureka.sk' # noqa
-            data = {'email': self.cfg.credentials.email, 'password': self.cfg.credentials.pswd_password}
-
-            session.post(url, data=data)
-            response = session.get('https://auth.heureka.sk/api/openidconnect/authorize?client_id=heureka.sk&response_type=code&scope=tenant%3Aheureka-group+cookie+userinfo%3A%2A+profile%3AHEU-SK&redirect_uri=https%3A%2F%2Fwww.heureka.sk%2F') # noqa
+            page.get_by_text('Administrácia e-shopu').click()
+            page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20000)
+            page.fill('#login-email', self.cfg.credentials.email)
+            page.fill('#login-password', self.cfg.credentials.pswd_password)
+            page.click('button:has-text("Prihlásiť sa e-mailom")')
 
         else:
             raise UserException("Country not supported")
 
-        if response.status_code != 200:
-            raise UserException(f"Login failed: {response.status_code}")
+        for cookie in context.cookies():
+            session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
 
-        logging.info("Login successful")
+        browser.close()
+        p.stop()
 
         table_name = self.cfg.destination.table_name or eshop_id
 
@@ -74,11 +89,16 @@ class Component(ComponentBase):
             writer.writeheader()
 
             for date in dates:
-                stats = self.get_stats_for_date(session, date, eshop_id)
-                writer.writerow(stats)
+                logging.info(f"Downloading data for date: {date['start_date']}")
+                try:
+                    stats = self.get_stats_for_date(session, date, eshop_id)
+                    writer.writerow(stats)
+                except AttributeError as e:
+                    logging.warning(f"Error while downloading data for date: {date['start_date']}: {e}")
 
         self.write_manifest(table_def)
 
+    @backoff.on_exception(backoff.expo, AttributeError, max_tries=7)
     def get_stats_for_date(self, session, date, eshop_id):
         if self.cfg.country == "cz":
             response = session.get('https://sluzby.heureka.cz/obchody/statistiky/'
