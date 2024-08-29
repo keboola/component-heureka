@@ -45,7 +45,7 @@ class Component(ComponentBase):
         browser = p.chromium.launch(headless=False)
         context = browser.new_context()
         page = context.new_page()
-        page.set_default_timeout(5000)
+        page.set_default_timeout(10000)
         page.goto(f'https://heureka.{self.cfg.country}')
 
         try:
