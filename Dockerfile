@@ -19,6 +19,11 @@ RUN pip install -r /code/requirements.txt
 
 RUN playwright install --with-deps chromium
 
+# workaround from https://github.com/stitionai/devika/issues/297
+RUN useradd -m -s /bin/bash myuser
+USER myuser
+RUN playwright install chromium
+
 WORKDIR /code/
 
 CMD ["sh", "-c", "Xvfb :99 -nolisten tcp -nolisten unix -screen 0 1024x768x24 & export DISPLAY=:99 && python -u /code/src/component.py"]
