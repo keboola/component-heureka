@@ -13,8 +13,10 @@ import datetime
 from playwright.sync_api import sync_playwright
 import backoff
 
+
 class TableNotFoundException(Exception):
     pass
+
 
 class Component(ComponentBase):
 
