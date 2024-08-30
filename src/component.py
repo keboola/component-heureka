@@ -13,6 +13,8 @@ import datetime
 from playwright.sync_api import sync_playwright
 import backoff
 
+class TableNotFoundException(Exception):
+    pass
 
 class Component(ComponentBase):
 
@@ -59,7 +61,7 @@ class Component(ComponentBase):
                 try:
                     stats = self.get_stats_for_date(self.session, date, eshop_id)
                     writer.writerow(stats)
-                except AttributeError as e:
+                except TableNotFoundException as e:
                     logging.warning(f"Error while downloading data for date: {date['start_date']}: {e}")
 
         self.write_manifest(table_def)
@@ -96,7 +98,7 @@ class Component(ComponentBase):
         browser.close()
         p.stop()
 
-    @backoff.on_exception(backoff.expo, AttributeError, max_tries=3)
+    @backoff.on_exception(backoff.expo, TableNotFoundException, max_tries=3)
     def get_stats_for_date(self, session, date, eshop_id):
         if self.cfg.country == "cz":
             response = session.get('https://sluzby.heureka.cz/obchody/statistiky/'
@@ -152,7 +154,7 @@ class Component(ComponentBase):
         except AttributeError as e:
             self.login()
             logging.warning("Table not found, logging in again")
-            raise e
+            raise TableNotFoundException(e)
 
 
 """
