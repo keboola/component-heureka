@@ -12,7 +12,8 @@ COPY deploy.sh /code/deploy.sh
 RUN apt-get update && apt-get install -y build-essential \
     xvfb \
     xauth \
-    xkb-data
+    xkb-data \
+    x11-xkb-utils
 
 RUN pip install flake8
 
