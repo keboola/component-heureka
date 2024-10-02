@@ -70,7 +70,7 @@ class Component(ComponentBase):
 
     def login(self):
         p = sync_playwright().start()
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=False, args=['--disable-breakpad'])
         context = browser.new_context()
         page = context.new_page()
         page.set_default_timeout(10000)
