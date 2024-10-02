@@ -21,4 +21,4 @@ RUN pip install -r /code/requirements.txt
 
 WORKDIR /code/
 
-CMD ["bash", "-c", "Xvfb :99 -nolisten tcp -nolisten unix -screen 0 1024x768x24 & export DISPLAY=:99 && python -u /code/src/component.py"]
+CMD ["bash", "-c", "Xvfb :99 -nolisten tcp -nolisten unix -screen 0 1024x768x24 -quiet 2>/dev/null & export DISPLAY=:99 && python -u /code/src/component.py"]
