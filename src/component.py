@@ -96,6 +96,8 @@ class Component(ComponentBase):
 
         elif self.cfg.country == "sk":
             self.screenshot(page)
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            self.screenshot(page)
             page.get_by_text('Administrácia e-shopu').click()
             self.screenshot(page)
             page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20000)
