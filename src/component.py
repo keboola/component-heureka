@@ -68,6 +68,7 @@ class Component(ComponentBase):
 
         self.write_manifest(table_def)
 
+    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
     def login(self):
         p = sync_playwright().start()
         browser = p.chromium.launch(headless=False)
