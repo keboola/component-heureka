@@ -80,6 +80,7 @@ class Component(ComponentBase):
         except Exception:
             logging.info("No cookies popup")
         if self.cfg.country == "cz":
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.get_by_text('Administrace e-shopu').click()
             page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20000)
             page.fill('#login-email', self.cfg.credentials.email)
@@ -87,6 +88,7 @@ class Component(ComponentBase):
             page.click('button:has-text("Přihlásit se e-mailem")')
 
         elif self.cfg.country == "sk":
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.get_by_text('Administrácia e-shopu').click()
             page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20000)
             page.fill('#login-email', self.cfg.credentials.email)
