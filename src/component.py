@@ -12,6 +12,9 @@ from keboola.csvwriter import ElasticDictWriter
 import datetime
 from playwright.sync_api import sync_playwright
 import backoff
+import inspect
+import os
+from pathlib import Path
 
 
 class TableNotFoundException(Exception):
@@ -75,19 +78,26 @@ class Component(ComponentBase):
         page = context.new_page()
         page.set_default_timeout(10000)
         page.goto(f'https://heureka.{self.cfg.country}')
+
+        self.screenshot(page)
+
         try:
             page.click('#didomi-notice-agree-button')
         except Exception:
             logging.info("No cookies popup")
         if self.cfg.country == "cz":
+            self.screenshot(page)
             page.get_by_text('Administrace e-shopu').click()
+            self.screenshot(page)
             page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20000)
             page.fill('#login-email', self.cfg.credentials.email)
             page.fill('#login-password', self.cfg.credentials.pswd_password)
             page.click('button:has-text("Přihlásit se e-mailem")')
 
         elif self.cfg.country == "sk":
+            self.screenshot(page)
             page.get_by_text('Administrácia e-shopu').click()
+            self.screenshot(page)
             page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20000)
             page.fill('#login-email', self.cfg.credentials.email)
             page.fill('#login-password', self.cfg.credentials.pswd_password)
@@ -99,6 +109,13 @@ class Component(ComponentBase):
             self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
         browser.close()
         p.stop()
+
+    def screenshot(self, page):
+        artifact_out_path = Path.joinpath(Path(self.data_folder_path), 'artifacts/out/current/')
+        os.makedirs(artifact_out_path, exist_ok=True)
+        caller_line = inspect.currentframe().f_back.f_lineno
+        file_path = Path.joinpath(artifact_out_path, f"heureka-debug-screen-{caller_line}.png")
+        page.screenshot(path=file_path)
 
     @backoff.on_exception(backoff.expo, TableNotFoundException, max_tries=3)
     def get_stats_for_date(self, session, date, eshop_id):
