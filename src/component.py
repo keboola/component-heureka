@@ -189,4 +189,4 @@ if __name__ == "__main__":
         exit(0)  # TODO: return 1
     except Exception as exc:
         logging.exception(exc)
-        exit(0) # TODO: return 1
+        exit(0)  # TODO: return 1
