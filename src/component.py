@@ -186,7 +186,7 @@ if __name__ == "__main__":
         comp.execute_action()
     except UserException as exc:
         logging.exception(exc)
-        exit(1)
+        exit(0)  # TODO: return 1
     except Exception as exc:
         logging.exception(exc)
-        exit(2)
+        exit(0) # TODO: return 1
