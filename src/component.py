@@ -13,6 +13,7 @@ import datetime
 from playwright.sync_api import sync_playwright
 import backoff
 
+BUTTON_SELECTOR_TIMEOUT = 60_000
 
 class TableNotFoundException(Exception):
     pass
@@ -83,18 +84,18 @@ class Component(ComponentBase):
         if self.cfg.country == "cz":
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.get_by_text('Administrace e-shopu').click()
-            page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
+            page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=BUTTON_SELECTOR_TIMEOUT)
             page.fill('#login-email', self.cfg.credentials.email)
             page.fill('#login-password', self.cfg.credentials.pswd_password)
-            page.click('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
+            page.click('button:has-text("Přihlásit se e-mailem")', timeout=BUTTON_SELECTOR_TIMEOUT)
 
         elif self.cfg.country == "sk":
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.get_by_text('Administrácia e-shopu').click()
-            page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
+            page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=BUTTON_SELECTOR_TIMEOUT)
             page.fill('#login-email', self.cfg.credentials.email)
             page.fill('#login-password', self.cfg.credentials.pswd_password)
-            page.click('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
+            page.click('button:has-text("Prihlásiť sa e-mailom")', timeout=BUTTON_SELECTOR_TIMEOUT)
 
         else:
             raise UserException("Country not supported")
