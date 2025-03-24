@@ -17,6 +17,10 @@ from keboola.csvwriter import ElasticDictWriter
 from playwright.async_api import async_playwright
 
 
+class LoginError(Exception):
+    pass
+
+
 class TableNotFoundException(Exception):
     pass
 
@@ -32,40 +36,105 @@ class Component(ComponentBase):
         self.cfg: Configuration = Configuration.load_from_dict(self.configuration.parameters)
 
     async def _login(self):
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
-            context = await browser.new_context()
-            page = await context.new_page()
-            await page.set_default_timeout(10000)
-            await page.goto(f'https://heureka.{self.cfg.country}')
-            try:
-                await page.click('#didomi-notice-agree-button')
-            except Exception:
-                logging.info("No cookies popup")
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)  # Changed to headless=True for better stability
+                if not browser:
+                    raise LoginError("Failed to launch browser")
 
-            if self.cfg.country == "cz":
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await page.get_by_text('Administrace e-shopu').click()
-                await page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
-                await page.fill('#login-email', self.cfg.credentials.email)
-                await page.fill('#login-password', self.cfg.credentials.pswd_password)
-                await page.click('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
-            elif self.cfg.country == "sk":
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await page.get_by_text('Administrácia e-shopu').click()
-                await page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
-                await page.fill('#login-email', self.cfg.credentials.email)
-                await page.fill('#login-password', self.cfg.credentials.pswd_password)
-                await page.click('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
-            else:
-                raise UserException("Country not supported")
+                context = await browser.new_context()
+                if not context:
+                    raise LoginError("Failed to create browser context")
 
-            cookies = await context.cookies()
-            for cookie in cookies:
-                self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
-            await browser.close()
+                page = await context.new_page()
+                if not page:
+                    raise LoginError("Failed to create new page")
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+                await page.set_default_timeout(20000)  # Increased timeout for better reliability
+
+                # Navigate to the page and wait for load state
+                response = await page.goto(f'https://heureka.{self.cfg.country}')
+                if not response or not response.ok:
+                    raise LoginError(f"Failed to load page: {response.status if response else 'No response'}")
+                await page.wait_for_load_state('networkidle')
+
+                try:
+                    # Wait for cookie button with timeout
+                    cookie_button = await page.wait_for_selector('#didomi-notice-agree-button', timeout=5000)
+                    if cookie_button:
+                        await cookie_button.click()
+                except Exception:
+                    logging.info("No cookies popup or failed to click")
+
+                if self.cfg.country == "cz":
+                    # Scroll and wait for elements to be visible
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    await page.wait_for_load_state('networkidle')
+
+                    admin_link = await page.get_by_text('Administrace e-shopu').wait_for(state='visible', timeout=10000)
+                    if not admin_link:
+                        raise LoginError("Could not find admin link")
+                    await admin_link.click()
+
+                    await page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20000)
+
+                    email_input = await page.wait_for_selector('#login-email')
+                    password_input = await page.wait_for_selector('#login-password')
+                    login_button = await page.wait_for_selector('button:has-text("Přihlásit se e-mailem")')
+
+                    if not all([email_input, password_input, login_button]):
+                        raise LoginError("Login form elements not found")
+
+                    await email_input.fill(self.cfg.credentials.email)
+                    await password_input.fill(self.cfg.credentials.pswd_password)
+                    await login_button.click()
+
+                    # Wait for navigation after login
+                    await page.wait_for_load_state('networkidle')
+
+                elif self.cfg.country == "sk":
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    await page.wait_for_load_state('networkidle')
+
+                    admin_link = await page.get_by_text('Administrácia e-shopu').wait_for(
+                        state='visible',
+                        timeout=10000
+                    )
+                    if not admin_link:
+                        raise LoginError("Could not find admin link")
+                    await admin_link.click()
+
+                    await page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20000)
+
+                    email_input = await page.wait_for_selector('#login-email')
+                    password_input = await page.wait_for_selector('#login-password')
+                    login_button = await page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")')
+
+                    if not all([email_input, password_input, login_button]):
+                        raise LoginError("Login form elements not found")
+
+                    await email_input.fill(self.cfg.credentials.email)
+                    await password_input.fill(self.cfg.credentials.pswd_password)
+                    await login_button.click()
+
+                    # Wait for navigation after login
+                    await page.wait_for_load_state('networkidle')
+                else:
+                    raise UserException("Country not supported")
+
+                cookies = await context.cookies()
+                if not cookies:
+                    raise LoginError("No cookies found after login")
+
+                for cookie in cookies:
+                    self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
+
+                await browser.close()
+
+        except Exception as e:
+            raise LoginError(f"Login failed: {str(e)}")
+
+    @backoff.on_exception(backoff.expo, (LoginError, Exception), max_tries=3)
     def login(self):
         asyncio.run(self._login())
 
