@@ -38,7 +38,7 @@ class Component(ComponentBase):
     async def _login(self):
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)  # Changed to headless=True for better stability
+                browser = await p.chromium.launch(headless=True)
                 if not browser:
                     raise LoginError("Failed to launch browser")
 
@@ -50,74 +50,59 @@ class Component(ComponentBase):
                 if not page:
                     raise LoginError("Failed to create new page")
 
-                await page.set_default_timeout(20000)  # Increased timeout for better reliability
+                await page.set_default_timeout(20000)
 
-                # Navigate to the page and wait for load state
                 response = await page.goto(f'https://heureka.{self.cfg.country}')
                 if not response or not response.ok:
                     raise LoginError(f"Failed to load page: {response.status if response else 'No response'}")
                 await page.wait_for_load_state('networkidle')
 
                 try:
-                    # Wait for cookie button with timeout
                     cookie_button = await page.wait_for_selector('#didomi-notice-agree-button', timeout=5000)
                     if cookie_button:
                         await cookie_button.click()
+                        await page.wait_for_load_state('networkidle')
                 except Exception:
                     logging.info("No cookies popup or failed to click")
 
                 if self.cfg.country == "cz":
-                    # Scroll and wait for elements to be visible
-                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    footer = await page.wait_for_selector('footer', timeout=10000)
+                    if footer:
+                        await footer.scroll_into_view_if_needed()
+                        await page.wait_for_load_state('networkidle')
+
+                    await page.wait_for_selector('text=Administrace e-shopu', timeout=10000)
+                    await page.click('text=Administrace e-shopu')
                     await page.wait_for_load_state('networkidle')
 
-                    admin_link = await page.get_by_text('Administrace e-shopu').wait_for(state='visible', timeout=10000)
-                    if not admin_link:
-                        raise LoginError("Could not find admin link")
-                    await admin_link.click()
-
                     await page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20000)
+                    await page.wait_for_selector('#login-email', timeout=10000)
+                    await page.wait_for_selector('#login-password', timeout=10000)
 
-                    email_input = await page.wait_for_selector('#login-email')
-                    password_input = await page.wait_for_selector('#login-password')
-                    login_button = await page.wait_for_selector('button:has-text("Přihlásit se e-mailem")')
+                    await page.fill('#login-email', self.cfg.credentials.email)
+                    await page.fill('#login-password', self.cfg.credentials.pswd_password)
 
-                    if not all([email_input, password_input, login_button]):
-                        raise LoginError("Login form elements not found")
-
-                    await email_input.fill(self.cfg.credentials.email)
-                    await password_input.fill(self.cfg.credentials.pswd_password)
-                    await login_button.click()
-
-                    # Wait for navigation after login
+                    await page.click('button:has-text("Přihlásit se e-mailem")')
                     await page.wait_for_load_state('networkidle')
 
                 elif self.cfg.country == "sk":
-                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    footer = await page.wait_for_selector('footer', timeout=10000)
+                    if footer:
+                        await footer.scroll_into_view_if_needed()
+                        await page.wait_for_load_state('networkidle')
+
+                    await page.wait_for_selector('text=Administrácia e-shopu', timeout=10000)
+                    await page.click('text=Administrácia e-shopu')
                     await page.wait_for_load_state('networkidle')
 
-                    admin_link = await page.get_by_text('Administrácia e-shopu').wait_for(
-                        state='visible',
-                        timeout=10000
-                    )
-                    if not admin_link:
-                        raise LoginError("Could not find admin link")
-                    await admin_link.click()
-
                     await page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20000)
+                    await page.wait_for_selector('#login-email', timeout=10000)
+                    await page.wait_for_selector('#login-password', timeout=10000)
 
-                    email_input = await page.wait_for_selector('#login-email')
-                    password_input = await page.wait_for_selector('#login-password')
-                    login_button = await page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")')
+                    await page.fill('#login-email', self.cfg.credentials.email)
+                    await page.fill('#login-password', self.cfg.credentials.pswd_password)
 
-                    if not all([email_input, password_input, login_button]):
-                        raise LoginError("Login form elements not found")
-
-                    await email_input.fill(self.cfg.credentials.email)
-                    await password_input.fill(self.cfg.credentials.pswd_password)
-                    await login_button.click()
-
-                    # Wait for navigation after login
+                    await page.click('button:has-text("Prihlásiť sa e-mailom")')
                     await page.wait_for_load_state('networkidle')
                 else:
                     raise UserException("Country not supported")
