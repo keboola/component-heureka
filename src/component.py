@@ -3,15 +3,18 @@ Template Component main class.
 
 """
 import logging
+import backoff
+import asyncio
+import datetime
+
+import requests
 from keboola.component.base import ComponentBase
 from keboola.component.exceptions import UserException
 from configuration import Configuration
-from requests_html import HTMLSession
+from selectolax.parser import HTMLParser
 from keboola.utils import parse_datetime_interval, split_dates_to_chunks
 from keboola.csvwriter import ElasticDictWriter
-import datetime
-from playwright.sync_api import sync_playwright
-import backoff
+from playwright.async_api import async_playwright
 
 
 class TableNotFoundException(Exception):
@@ -22,11 +25,49 @@ class Component(ComponentBase):
 
     def __init__(self):
         super().__init__()
-        self.session = HTMLSession()
+        self.session = requests.Session()
 
     def _init_configuration(self) -> None:
         self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
         self.cfg: Configuration = Configuration.load_from_dict(self.configuration.parameters)
+
+    async def _login(self):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=False)
+            context = await browser.new_context()
+            page = await context.new_page()
+            await page.set_default_timeout(10000)
+            await page.goto(f'https://heureka.{self.cfg.country}')
+            try:
+                await page.click('#didomi-notice-agree-button')
+            except Exception:
+                logging.info("No cookies popup")
+
+            if self.cfg.country == "cz":
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await page.get_by_text('Administrace e-shopu').click()
+                await page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
+                await page.fill('#login-email', self.cfg.credentials.email)
+                await page.fill('#login-password', self.cfg.credentials.pswd_password)
+                await page.click('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
+            elif self.cfg.country == "sk":
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await page.get_by_text('Administrácia e-shopu').click()
+                await page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
+                await page.fill('#login-email', self.cfg.credentials.email)
+                await page.fill('#login-password', self.cfg.credentials.pswd_password)
+                await page.click('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
+            else:
+                raise UserException("Country not supported")
+
+            cookies = await context.cookies()
+            for cookie in cookies:
+                self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
+            await browser.close()
+
+    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+    def login(self):
+        asyncio.run(self._login())
 
     def run(self):
         """
@@ -68,41 +109,6 @@ class Component(ComponentBase):
 
         self.write_manifest(table_def)
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    def login(self):
-        p = sync_playwright().start()
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
-        page = context.new_page()
-        page.set_default_timeout(10000)
-        page.goto(f'https://heureka.{self.cfg.country}')
-        try:
-            page.click('#didomi-notice-agree-button')
-        except Exception:
-            logging.info("No cookies popup")
-        if self.cfg.country == "cz":
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.get_by_text('Administrace e-shopu').click()
-            page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
-            page.fill('#login-email', self.cfg.credentials.email)
-            page.fill('#login-password', self.cfg.credentials.pswd_password)
-            page.click('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
-
-        elif self.cfg.country == "sk":
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.get_by_text('Administrácia e-shopu').click()
-            page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
-            page.fill('#login-email', self.cfg.credentials.email)
-            page.fill('#login-password', self.cfg.credentials.pswd_password)
-            page.click('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
-
-        else:
-            raise UserException("Country not supported")
-        for cookie in context.cookies():
-            self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
-        browser.close()
-        p.stop()
-
     @backoff.on_exception(backoff.expo, TableNotFoundException, max_tries=3)
     def get_stats_for_date(self, session, date, eshop_id):
         if self.cfg.country == "cz":
@@ -136,30 +142,32 @@ class Component(ComponentBase):
             }
 
         try:
-            column_names = [th.text for th in response.html.find('thead', first=True).find('tr')[1].find('th')]
-            table_body = response.html.find('tbody', first=True)
+            html = HTMLParser(response.text)
+            thead = html.css('thead tr')[1]
+            tbody = html.css('tbody tr')[0]
 
-            if table_body:
+            if not thead or not tbody:
+                raise TableNotFoundException("Table structure not found")
 
-                values = [value.text.replace('Â\xa0KÄ\x8d', '').replace('Â â\x82¬', '').replace('%', '')
-                          .replace('Â', '').replace(' ', '').replace('&nbsp', '').replace(' ', '')
-                          for value in table_body.find('tr')[0].find('td')]
+            column_names = [th.text().strip() for th in thead.css('th')]
+            values = [td.text().strip().replace('\xa0Kč', '').replace('€', '').replace('%', '').strip()
+                      for td in tbody.css('td')]
 
-                row = {'eshop_id': eshop_id, 'date': date["start_date"]}
+            row = {'eshop_id': eshop_id, 'date': date["start_date"]}
 
-                if values[0] == 'Celkem':
-                    logging.warning("No data available for the selected period")
-                else:
-                    for column_name, value in zip(column_names, values):
-                        if key := columns_mapping.get(column_name):
-                            row[key] = value
+            if values[0] == 'Celkem':
+                logging.warning("No data available for the selected period")
+            else:
+                for column_name, value in zip(column_names, values):
+                    if key := columns_mapping.get(column_name):
+                        row[key] = value
 
-                return row
+            return row
 
-        except AttributeError as e:
+        except Exception as e:
             self.login()
             logging.warning("Table not found, logging in again")
-            raise TableNotFoundException(e)
+            raise TableNotFoundException(str(e))
 
 
 """
