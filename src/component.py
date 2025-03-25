@@ -38,11 +38,23 @@ class Component(ComponentBase):
     async def _login(self):
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu'
+                    ]
+                )
                 if not browser:
                     raise LoginError("Failed to launch browser")
 
-                context = await browser.new_context()
+                context = await browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',  # noqa: E501
+                    locale='cs-CZ' if self.cfg.country == 'cz' else 'sk-SK'
+                )
                 if not context:
                     raise LoginError("Failed to create browser context")
 
@@ -50,7 +62,19 @@ class Component(ComponentBase):
                 if not page:
                     raise LoginError("Failed to create new page")
 
-                await page.set_default_timeout(20000)
+                page.set_default_timeout(20000)
+
+                await page.set_extra_http_headers({
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',  # noqa: E501
+                    'Accept-Language': 'cs-CZ,cs;q=0.9,en;q=0.8' if self.cfg.country == 'cz' else 'sk-SK,sk;q=0.9,en;q=0.8',  # noqa: E501
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1'
+                })
 
                 response = await page.goto(f'https://heureka.{self.cfg.country}')
                 if not response or not response.ok:
