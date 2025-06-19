@@ -10,7 +10,7 @@ from requests_html import HTMLSession
 from keboola.utils import parse_datetime_interval, split_dates_to_chunks
 from keboola.csvwriter import ElasticDictWriter
 import datetime
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError
 import backoff
 
 
@@ -34,6 +34,9 @@ class Component(ComponentBase):
         """
 
         self._init_configuration()
+
+        if self.cfg.country not in ("cz", "sk"):
+            raise UserException("Country not supported")
 
         eshop_id = self.cfg.report_settings.eshop_id
         date_from, date_to = parse_datetime_interval(self.cfg.report_settings.date_from,
@@ -80,28 +83,32 @@ class Component(ComponentBase):
             page.click('#didomi-notice-agree-button')
         except Exception:
             logging.info("No cookies popup")
-        if self.cfg.country == "cz":
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.get_by_text('Administrace e-shopu').click()
-            page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
-            page.fill('#login-email', self.cfg.credentials.email)
-            page.fill('#login-password', self.cfg.credentials.pswd_password)
-            page.click('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
+        try:
+            if self.cfg.country == "cz":
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                page.get_by_text('Administrace e-shopu').click()
+                page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
+                page.fill('#login-email', self.cfg.credentials.email)
+                page.fill('#login-password', self.cfg.credentials.pswd_password)
+                page.click('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
 
-        elif self.cfg.country == "sk":
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.get_by_text('Administrácia e-shopu').click()
-            page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
-            page.fill('#login-email', self.cfg.credentials.email)
-            page.fill('#login-password', self.cfg.credentials.pswd_password)
-            page.click('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
+            elif self.cfg.country == "sk":
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                page.get_by_text('Administrácia e-shopu').click()
+                page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
+                page.fill('#login-email', self.cfg.credentials.email)
+                page.fill('#login-password', self.cfg.credentials.pswd_password)
+                page.click('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
 
-        else:
-            raise UserException("Country not supported")
-        for cookie in context.cookies():
-            self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
-        browser.close()
-        p.stop()
+            for cookie in context.cookies():
+                self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
+
+        except TimeoutError:
+            raise UserException("The component was unable to log in due to an unknown error."
+                                "Please contact our support team for assistance.")
+        finally:
+            browser.close()
+            p.stop()
 
     @backoff.on_exception(backoff.expo, TableNotFoundException, max_tries=3)
     def get_stats_for_date(self, session, date, eshop_id):
