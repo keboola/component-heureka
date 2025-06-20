@@ -78,7 +78,7 @@ class Component(ComponentBase):
         context = browser.new_context()
         page = context.new_page()
         page.set_default_timeout(10000)
-        page.goto(f'https://heureka.{self.cfg.country}')
+        headers = page.goto(f'https://heureka.{self.cfg.country}').headers
         try:
             page.click('#didomi-notice-agree-button')
         except Exception:
@@ -104,6 +104,8 @@ class Component(ComponentBase):
                 self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
 
         except TimeoutError:
+            logging.warning(f"Can't login, Cloudflare Ray ID: {headers.get('cf-ray')}")
+
             raise UserException("The component was unable to log in due to an unknown error."
                                 "Please contact our support team for assistance.")
         finally:
