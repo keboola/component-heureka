@@ -89,31 +89,31 @@ class Component(ComponentBase):
                 except Exception:
                     logging.info("No cookies popup")
 
-                try:
-                    if self.cfg.country == "cz":
-                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        page.get_by_text('Administrace e-shopu').click()
-                        page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
-                        page.fill('#login-email', self.cfg.credentials.email)
-                        page.fill('#login-password', self.cfg.credentials.pswd_password)
-                        page.click('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
+                if self.cfg.country == "cz":
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.get_by_text('Administrace e-shopu').click()
+                    page.wait_for_selector('button:has-text("Přihlásit se e-mailem")')
+                    page.fill('#login-email', self.cfg.credentials.email)
+                    page.fill('#login-password', self.cfg.credentials.pswd_password)
+                    page.click('button:has-text("Přihlásit se e-mailem")')
 
-                    elif self.cfg.country == "sk":
-                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        page.get_by_text('Administrácia e-shopu').click()
-                        page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
-                        page.fill('#login-email', self.cfg.credentials.email)
-                        page.fill('#login-password', self.cfg.credentials.pswd_password)
-                        page.click('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
+                elif self.cfg.country == "sk":
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.get_by_text('Administrácia e-shopu').click()
+                    page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")')
+                    page.fill('#login-email', self.cfg.credentials.email)
+                    page.fill('#login-password', self.cfg.credentials.pswd_password)
+                    page.click('button:has-text("Prihlásiť sa e-mailom")')
 
-                    for cookie in context.cookies():
-                        self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
+                for cookie in context.cookies():
+                    self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
 
-                except TimeoutError:
-                    logging.warning(f"Can't login saving screenshot to artifacts, Cloudflare Ray ID: {headers.get('cf-ray')}")
-                    self.screenshot(page)
-                    raise UserException("The component was unable to log in due to an unknown error."
-                                        "Please contact our support team for assistance.")
+            except TimeoutError:
+                logging.warning(f"Can't login saving screenshot to artifacts,"
+                                f" Cloudflare Ray ID: {headers.get('cf-ray')}")
+                self.screenshot(page)
+                raise UserException("The component was unable to log in due to an unknown error."
+                                    "Please contact our support team for assistance.")
             finally:
                 browser.close()
 
