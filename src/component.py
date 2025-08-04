@@ -110,7 +110,7 @@ class Component(ComponentBase):
 
             except TimeoutError:
                 logging.warning(f"Can't login saving screenshot to artifacts,"
-                                f" Cloudflare Ray ID: {headers.get('cf-ray') if headers.get('cf-ray') else 'N/A'}")
+                                f" Cloudflare Ray ID: {headers.get('cf-ray') if headers else 'headers not found'}")
                 self.screenshot(page)
                 raise UserException("The component was unable to log in due to an unknown error."
                                     "Please contact our support team for assistance.")
