@@ -76,44 +76,46 @@ class Component(ComponentBase):
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=3)
     def login(self):
-        p = sync_playwright().start()
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
-        page = context.new_page()
-        page.set_default_timeout(10000)
-        headers = page.goto(f'https://heureka.{self.cfg.country}').headers
-        try:
-            page.click('#didomi-notice-agree-button')
-        except Exception:
-            logging.info("No cookies popup")
-        try:
-            if self.cfg.country == "cz":
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                page.get_by_text('Administrace e-shopu').click()
-                page.wait_for_selector('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
-                page.fill('#login-email', self.cfg.credentials.email)
-                page.fill('#login-password', self.cfg.credentials.pswd_password)
-                page.click('button:has-text("Přihlásit se e-mailem")', timeout=20_000)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=False)
+            try:
+                context = browser.new_context()
+                page = context.new_page()
+                page.set_default_timeout(20000)
+                headers = page.goto(f'https://heureka.{self.cfg.country}').headers
 
-            elif self.cfg.country == "sk":
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                page.get_by_text('Administrácia e-shopu').click()
-                page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
-                page.fill('#login-email', self.cfg.credentials.email)
-                page.fill('#login-password', self.cfg.credentials.pswd_password)
-                page.click('button:has-text("Prihlásiť sa e-mailom")', timeout=20_000)
+                try:
+                    page.click('#didomi-notice-agree-button')
+                except Exception:
+                    logging.info("No cookies popup")
 
-            for cookie in context.cookies():
-                self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
+                if self.cfg.country == "cz":
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.get_by_text('Administrace e-shopu').click()
+                    page.wait_for_selector('button:has-text("Přihlásit se e-mailem")')
+                    page.fill('#login-email', self.cfg.credentials.email)
+                    page.fill('#login-password', self.cfg.credentials.pswd_password)
+                    page.click('button:has-text("Přihlásit se e-mailem")')
 
-        except TimeoutError:
-            logging.warning(f"Can't login saving screenshot to artifacts, Cloudflare Ray ID: {headers.get('cf-ray')}")
-            self.screenshot(page)
-            raise UserException("The component was unable to log in due to an unknown error."
-                                "Please contact our support team for assistance.")
-        finally:
-            browser.close()
-            p.stop()
+                elif self.cfg.country == "sk":
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.get_by_text('Administrácia e-shopu').click()
+                    page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")')
+                    page.fill('#login-email', self.cfg.credentials.email)
+                    page.fill('#login-password', self.cfg.credentials.pswd_password)
+                    page.click('button:has-text("Prihlásiť sa e-mailom")')
+
+                for cookie in context.cookies():
+                    self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
+
+            except TimeoutError:
+                logging.warning(f"Can't login saving screenshot to artifacts,"
+                                f" Cloudflare Ray ID: {headers.get('cf-ray')}")
+                self.screenshot(page)
+                raise UserException("The component was unable to log in due to an unknown error."
+                                    "Please contact our support team for assistance.")
+            finally:
+                browser.close()
 
     @backoff.on_exception(backoff.expo, TableNotFoundException, max_tries=3)
     def get_stats_for_date(self, session, date, eshop_id):
