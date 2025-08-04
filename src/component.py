@@ -86,8 +86,8 @@ class Component(ComponentBase):
 
                 try:
                     page.click('#didomi-notice-agree-button')
-                except Exception:
-                    logging.info("No cookies popup")
+                except Exception as e:
+                    logging.info(f"No cookies popup - {e}")
 
                 if self.cfg.country == "cz":
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -110,7 +110,7 @@ class Component(ComponentBase):
 
             except TimeoutError:
                 logging.warning(f"Can't login saving screenshot to artifacts,"
-                                f" Cloudflare Ray ID: {headers.get('cf-ray')}")
+                                f" Cloudflare Ray ID: {headers.get('cf-ray') if headers.get('cf-ray') else 'N/A'}")
                 self.screenshot(page)
                 raise UserException("The component was unable to log in due to an unknown error."
                                     "Please contact our support team for assistance.")
