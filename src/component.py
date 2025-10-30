@@ -108,9 +108,12 @@ class Component(ComponentBase):
                 for cookie in context.cookies():
                     self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
 
-            except TimeoutError:
-                logging.warning(f"Can't login saving screenshot to artifacts,"
-                                f" Cloudflare Ray ID: {headers.get('cf-ray')}")
+            except Exception as e:
+                if headers and headers.get('cf-ray'):
+                    logging.warning(f"Can't login. Cloudflare Ray ID: {headers.get('cf-ray')}")
+                else:
+                    logging.warning(f"Can't login. Exception: {e}")
+
                 self.screenshot(page)
                 raise UserException("The component was unable to log in due to an unknown error."
                                     "Please contact our support team for assistance.")
