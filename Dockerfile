@@ -17,7 +17,13 @@ RUN pip install flake8
 
 RUN pip install -r /code/requirements.txt
 
-RUN playwright install --with-deps chromium
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-unifont fonts-liberation fonts-noto-color-emoji \
+    libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libdrm2 \
+    libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 \
+    libcairo2 libasound2t64 libatspi2.0-0t64 libwayland-client0 libxfixes3 \
+    && rm -rf /var/lib/apt/lists/*
+RUN playwright install chromium
 
 # workaround from https://github.com/stitionai/devika/issues/297
 RUN useradd -m -s /bin/bash myuser
