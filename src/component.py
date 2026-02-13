@@ -169,21 +169,34 @@ class Component(ComponentBase):
 
         try:
             self.page.goto(url, wait_until='networkidle')
+            current_url = self.page.url
+            title = self.page.title()
+            logging.info(f"Stats page loaded: url={current_url} title={title}")
+            try:
+                self.page.wait_for_selector('thead', timeout=15000)
+            except TimeoutError:
+                logging.warning(
+                    f"thead not found after 15s, url={current_url} title={title}"
+                )
+                self.screenshot(self.page)
+                html_content = self.page.content()
+                if 'cf-challenge' in html_content or 'Checking your browser' in html_content:
+                    logging.error("Cloudflare challenge detected on stats page")
+                    raise CloudflareBlockedException("Cloudflare is blocking stats page requests")
+                self.login()
+                raise TableNotFoundException(f"Stats table not found: url={current_url}")
             html_content = self.page.content()
-
-            if 'cf-challenge' in html_content or 'Checking your browser' in html_content:
-                logging.error("Cloudflare challenge detected on stats page")
-                raise CloudflareBlockedException("Cloudflare is blocking stats page requests")
-
             soup = BeautifulSoup(html_content, 'lxml')
             thead = soup.find('thead')
 
-            if thead is None:
-                self.login()
-                logging.warning("Table not found, logging in again")
-                raise TableNotFoundException("Stats table not found in page response")
-
-            column_names = [th.get_text() for th in thead.find_all('tr')[1].find_all('th')]
+            header_rows = thead.find_all('tr')
+            if len(header_rows) < 2:
+                logging.warning(f"Unexpected thead structure: {len(header_rows)} rows")
+                self.screenshot(self.page)
+                raise TableNotFoundException(
+                    f"Unexpected table header: {len(header_rows)} rows"
+                )
+            column_names = [th.get_text() for th in header_rows[1].find_all('th')]
             table_body = soup.find('tbody')
 
             if table_body:
