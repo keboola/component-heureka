@@ -189,7 +189,7 @@ class Component(ComponentBase):
             if table_body:
 
                 values = [value.get_text().replace('\xa0Kč', '').replace('\xa0€', '').replace('%', '')
-                          .replace('\xa0', '').replace(' ', '').replace('&nbsp','')
+                          .replace('\xa0', '').replace(' ', '').replace('&nbsp', '')
                           for value in table_body.find_all('tr')[0].find_all('td')]
 
                 row = {'eshop_id': eshop_id, 'date': date["start_date"]}
