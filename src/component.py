@@ -127,6 +127,8 @@ class Component(ComponentBase):
                 self.page.click('button:has-text("Prihlásiť sa e-mailom")')
 
             self.page.wait_for_load_state('networkidle')
+            login_url = self.page.url
+            logging.info(f"Login completed, now at: {login_url}")
 
         except TimeoutError:
             logging.warning(f"Can't login saving screenshot to artifacts,"
@@ -175,11 +177,21 @@ class Component(ComponentBase):
             try:
                 self.page.wait_for_selector('thead', timeout=15000)
             except TimeoutError:
+                current_url = self.page.url
+                title = self.page.title()
                 logging.warning(
                     f"thead not found after 15s, url={current_url} title={title}"
                 )
                 self.screenshot(self.page)
                 html_content = self.page.content()
+                soup_dbg = BeautifulSoup(html_content, 'lxml')
+                body = soup_dbg.find('body')
+                body_text = body.get_text(separator=' ', strip=True)[:500] if body else 'NO BODY'
+                logging.warning(f"Page body text: {body_text}")
+                tables = soup_dbg.find_all('table')
+                logging.warning(f"Tables found: {len(tables)}")
+                for i, t in enumerate(tables[:3]):
+                    logging.warning(f"Table {i} classes={t.get('class')} id={t.get('id')}")
                 if 'cf-challenge' in html_content or 'Checking your browser' in html_content:
                     logging.error("Cloudflare challenge detected on stats page")
                     raise CloudflareBlockedException("Cloudflare is blocking stats page requests")
