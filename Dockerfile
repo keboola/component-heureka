@@ -17,6 +17,10 @@ RUN pip install flake8
 
 RUN pip install -r /code/requirements.txt
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-unifont \
+    fonts-ubuntu \
+    && rm -rf /var/lib/apt/lists/*
 RUN playwright install --with-deps chromium
 
 # workaround from https://github.com/stitionai/devika/issues/297
