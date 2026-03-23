@@ -76,7 +76,7 @@ jobs:
 
       - name: Run tests
         run: |
-          docker run ${{ env.KBC_DEVELOPERPORTAL_APP }} ruff check .
+          docker run ${{ env.KBC_DEVELOPERPORTAL_APP }} ruff check --no-cache .
           echo "Running unit-tests..."
           docker run ${{ env.KBC_DEVELOPERPORTAL_APP }} python -m unittest discover
 
