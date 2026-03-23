@@ -2,6 +2,7 @@
 Template Component main class.
 
 """
+
 import os
 import tempfile
 import logging
@@ -23,7 +24,6 @@ class TableNotFoundException(Exception):
 
 
 class Component(ComponentBase):
-
     def __init__(self):
         super().__init__()
         self.session = HTMLSession()
@@ -43,8 +43,9 @@ class Component(ComponentBase):
             raise UserException("Country not supported")
 
         eshop_id = self.cfg.report_settings.eshop_id
-        date_from, date_to = parse_datetime_interval(self.cfg.report_settings.date_from,
-                                                     self.cfg.report_settings.date_to)
+        date_from, date_to = parse_datetime_interval(
+            self.cfg.report_settings.date_from, self.cfg.report_settings.date_to
+        )
 
         if (datetime.datetime.now() - date_from).days > 365:
             print("Cannot get data older than 1 year, downloading data for the last 365 days.")
@@ -56,13 +57,27 @@ class Component(ComponentBase):
 
         table_name = self.cfg.destination.table_name or eshop_id
 
-        table_def = self.create_out_table_definition(name=f'{table_name}.csv',
-                                                     incremental=self.cfg.destination.load_type.is_incremental(),
-                                                     primary_key=['eshop_id', 'date'])
+        table_def = self.create_out_table_definition(
+            name=f"{table_name}.csv",
+            incremental=self.cfg.destination.load_type.is_incremental(),
+            primary_key=["eshop_id", "date"],
+        )
 
-        with (ElasticDictWriter(table_def.full_path, fieldnames=['eshop_id', 'date', 'pno', 'conversion_rates',
-                                                                 'spend', 'aov', 'cpc', 'orders',
-                                                                 'visits', 'transaction_revenue']) as writer):
+        with ElasticDictWriter(
+            table_def.full_path,
+            fieldnames=[
+                "eshop_id",
+                "date",
+                "pno",
+                "conversion_rates",
+                "spend",
+                "aov",
+                "cpc",
+                "orders",
+                "visits",
+                "transaction_revenue",
+            ],
+        ) as writer:
             writer.writeheader()
 
             for date in dates:
@@ -75,8 +90,7 @@ class Component(ComponentBase):
 
         self.write_manifest(table_def)
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3,
-                          giveup=lambda e: isinstance(e, UserException))
+    @backoff.on_exception(backoff.expo, Exception, max_tries=3, giveup=lambda e: isinstance(e, UserException))
     def login(self):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=False)
@@ -85,35 +99,35 @@ class Component(ComponentBase):
                 context = browser.new_context()
                 page = context.new_page()
                 page.set_default_timeout(20000)
-                page.goto(f'https://heureka.{self.cfg.country}')
+                page.goto(f"https://heureka.{self.cfg.country}")
 
                 try:
-                    page.click('#didomi-notice-agree-button')
+                    page.click("#didomi-notice-agree-button")
                 except Exception:
                     logging.info("No cookies popup")
 
                 if self.cfg.country == "cz":
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    page.get_by_text('Administrace e-shopu').click()
+                    page.get_by_text("Administrace e-shopu").click()
                     page.wait_for_selector('button:has-text("Přihlásit se e-mailem")')
-                    page.fill('#login-email', self.cfg.credentials.email)
-                    page.fill('#login-password', self.cfg.credentials.pswd_password)
+                    page.fill("#login-email", self.cfg.credentials.email)
+                    page.fill("#login-password", self.cfg.credentials.pswd_password)
                     page.click('button:has-text("Přihlásit se e-mailem")')
 
                 elif self.cfg.country == "sk":
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    page.get_by_text('Administrácia e-shopu').click()
+                    page.get_by_text("Administrácia e-shopu").click()
                     page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")')
-                    page.fill('#login-email', self.cfg.credentials.email)
-                    page.fill('#login-password', self.cfg.credentials.pswd_password)
+                    page.fill("#login-email", self.cfg.credentials.email)
+                    page.fill("#login-password", self.cfg.credentials.pswd_password)
                     page.click('button:has-text("Prihlásiť sa e-mailom")')
 
-                page.wait_for_load_state('networkidle')
-                if page.query_selector('#login-email') or 'sluzby.heureka' not in page.url:
+                page.wait_for_load_state("networkidle")
+                if page.query_selector("#login-email") or "sluzby.heureka" not in page.url:
                     raise UserException(f"Login failed - unexpected post-login page: {page.url}")
 
                 for cookie in context.cookies():
-                    self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
+                    self.session.cookies.set(cookie["name"], cookie["value"], domain=cookie["domain"])
 
             except Exception:
                 if page:
@@ -126,48 +140,58 @@ class Component(ComponentBase):
     @backoff.on_exception(backoff.expo, TableNotFoundException, max_tries=3)
     def get_stats_for_date(self, session, date, eshop_id):
         if self.cfg.country == "cz":
-            response = session.get('https://sluzby.heureka.cz/obchody/statistiky/'
-                                   f'?from={date["start_date"]}&to={date["start_date"]}&shop={eshop_id}&cat=-4')
+            response = session.get(
+                "https://sluzby.heureka.cz/obchody/statistiky/"
+                f"?from={date['start_date']}&to={date['start_date']}&shop={eshop_id}&cat=-4"
+            )
 
             columns_mapping = {
-                'NÃ¡vÅ¡tÄ\x9bvy': 'visits',
-                'CPC': 'cpc',
-                'NÃ¡klady': 'spend',
-                'KonverznÃ­ pomÄ\x9br': 'conversion_rates',
-                'Obj': 'orders',
-                'PrÅ¯mÄ\x9brnÃ¡ objednÃ¡vka': 'aov',
-                'Obrat': 'transaction_revenue',
-                'NÃ¡klady zÂ obratu': 'pno',
+                "NÃ¡vÅ¡tÄ\x9bvy": "visits",
+                "CPC": "cpc",
+                "NÃ¡klady": "spend",
+                "KonverznÃ­ pomÄ\x9br": "conversion_rates",
+                "Obj": "orders",
+                "PrÅ¯mÄ\x9brnÃ¡ objednÃ¡vka": "aov",
+                "Obrat": "transaction_revenue",
+                "NÃ¡klady zÂ obratu": "pno",
             }
 
         else:
-            response = session.get('https://sluzby.heureka.sk/obchody/statistiky/'
-                                   f'?from={date["start_date"]}&to={date["start_date"]}&shop={eshop_id}&cat=-4')
+            response = session.get(
+                "https://sluzby.heureka.sk/obchody/statistiky/"
+                f"?from={date['start_date']}&to={date['start_date']}&shop={eshop_id}&cat=-4"
+            )
 
             columns_mapping = {
-                'NÃ¡vÅ¡tevy': 'visits',
-                'CPC': 'cpc',
-                'NÃ¡klady': 'spend',
-                'KonverznÃ½ pomer': 'conversion_rates',
-                'Obj': 'orders',
-                'PriemernÃ¡ objednÃ¡vka': 'aov',
-                'Obrat': 'transaction_revenue',
-                'NÃ¡klady zÂ obratu': 'pno',
+                "NÃ¡vÅ¡tevy": "visits",
+                "CPC": "cpc",
+                "NÃ¡klady": "spend",
+                "KonverznÃ½ pomer": "conversion_rates",
+                "Obj": "orders",
+                "PriemernÃ¡ objednÃ¡vka": "aov",
+                "Obrat": "transaction_revenue",
+                "NÃ¡klady zÂ obratu": "pno",
             }
 
         try:
-            column_names = [th.text for th in response.html.find('thead', first=True).find('tr')[1].find('th')]
-            table_body = response.html.find('tbody', first=True)
+            column_names = [th.text for th in response.html.find("thead", first=True).find("tr")[1].find("th")]
+            table_body = response.html.find("tbody", first=True)
 
             if table_body:
+                values = [
+                    value.text.replace("Â\xa0KÄ\x8d", "")
+                    .replace("Â â\x82¬", "")
+                    .replace("%", "")
+                    .replace("Â", "")
+                    .replace(" ", "")
+                    .replace("&nbsp", "")
+                    .replace(" ", "")
+                    for value in table_body.find("tr")[0].find("td")
+                ]
 
-                values = [value.text.replace('Â\xa0KÄ\x8d', '').replace('Â â\x82¬', '').replace('%', '')
-                          .replace('Â', '').replace(' ', '').replace('&nbsp', '').replace(' ', '')
-                          for value in table_body.find('tr')[0].find('td')]
+                row = {"eshop_id": eshop_id, "date": date["start_date"]}
 
-                row = {'eshop_id': eshop_id, 'date': date["start_date"]}
-
-                if values[0] == 'Celkem':
+                if values[0] == "Celkem":
                     logging.warning("No data available for the selected period")
                 else:
                     for column_name, value in zip(column_names, values):
@@ -184,7 +208,7 @@ class Component(ComponentBase):
 
     def _save_response_artifact(self, response):
         filename = f"heureka-debug-response-{datetime.datetime.now().strftime('%H%M%S')}.html"
-        with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w', encoding='utf-8') as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as tmp:
             tmp.write(response.text)
             tmp_path = tmp.name
         try:
@@ -198,7 +222,7 @@ class Component(ComponentBase):
 
     def screenshot(self, page):
         filename = f"heureka-debug-screen-{datetime.datetime.now().strftime('%H%M%S')}.png"
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp_path = tmp.name
         try:
             page.screenshot(path=tmp_path, timeout=5000)
