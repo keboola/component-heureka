@@ -3,17 +3,18 @@ Template Component main class.
 
 """
 import os
-import inspect
-from pathlib import Path
+import tempfile
 import logging
+import datetime
+
+from kbcstorage.files import Files
 from keboola.component.base import ComponentBase
 from keboola.component.exceptions import UserException
 from configuration import Configuration
 from requests_html import HTMLSession
 from keboola.utils import parse_datetime_interval, split_dates_to_chunks
 from keboola.csvwriter import ElasticDictWriter
-import datetime
-from playwright.sync_api import sync_playwright, TimeoutError
+from playwright.sync_api import sync_playwright
 import backoff
 
 
@@ -74,20 +75,22 @@ class Component(ComponentBase):
 
         self.write_manifest(table_def)
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=3,
+                          giveup=lambda e: isinstance(e, UserException))
     def login(self):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=False)
+            page = None
             try:
                 context = browser.new_context()
                 page = context.new_page()
                 page.set_default_timeout(20000)
-                headers = page.goto(f'https://heureka.{self.cfg.country}').headers
+                page.goto(f'https://heureka.{self.cfg.country}')
 
                 try:
                     page.click('#didomi-notice-agree-button')
-                except Exception as e:
-                    logging.info(f"No cookies popup - {e}")
+                except Exception:
+                    logging.info("No cookies popup")
 
                 if self.cfg.country == "cz":
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -105,15 +108,18 @@ class Component(ComponentBase):
                     page.fill('#login-password', self.cfg.credentials.pswd_password)
                     page.click('button:has-text("Prihlásiť sa e-mailom")')
 
+                page.wait_for_load_state('networkidle')
+                if page.query_selector('#login-email') or 'sluzby.heureka' not in page.url:
+                    raise UserException(f"Login failed - unexpected post-login page: {page.url}")
+
                 for cookie in context.cookies():
                     self.session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'])
 
-            except TimeoutError:
-                logging.warning(f"Can't login saving screenshot to artifacts,"
-                                f" Cloudflare Ray ID: {headers.get('cf-ray') if headers else 'headers not found'}")
-                self.screenshot(page)
-                raise UserException("The component was unable to log in due to an unknown error."
-                                    "Please contact our support team for assistance.")
+            except Exception:
+                if page:
+                    logging.warning(f"Login failed at URL: {page.url}")
+                    self.screenshot(page)
+                raise
             finally:
                 browser.close()
 
@@ -171,16 +177,43 @@ class Component(ComponentBase):
                 return row
 
         except AttributeError as e:
+            logging.warning("Table not found, saving response and logging in again")
+            self._save_response_artifact(response)
             self.login()
-            logging.warning("Table not found, logging in again")
             raise TableNotFoundException(e)
 
+    def _save_response_artifact(self, response):
+        filename = f"heureka-debug-response-{datetime.datetime.now().strftime('%H%M%S')}.html"
+        with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w', encoding='utf-8') as tmp:
+            tmp.write(response.text)
+            tmp_path = tmp.name
+        try:
+            self._store_sapi_artifact(tmp_path, filename)
+            logging.info(f"Response HTML saved as artifact: {filename}")
+        except Exception as e:
+            logging.warning(f"Failed to save response artifact: {e}")
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
     def screenshot(self, page):
-        artifact_out_path = Path.joinpath(Path(self.data_folder_path), 'artifacts/out/current/')
-        os.makedirs(artifact_out_path, exist_ok=True)
-        caller_line = inspect.currentframe().f_back.f_lineno
-        file_path = Path.joinpath(artifact_out_path, f"heureka-debug-screen-{caller_line}.png")
-        page.screenshot(path=file_path)
+        filename = f"heureka-debug-screen-{datetime.datetime.now().strftime('%H%M%S')}.png"
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            page.screenshot(path=tmp_path, timeout=5000)
+            self._store_sapi_artifact(tmp_path, filename)
+        except Exception as e:
+            logging.warning(f"Failed to save screenshot artifact: {e}")
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    def _store_sapi_artifact(self, source_file_path: str, filename: str) -> None:
+        tags = ["kds-team.ex-heureka", f"runId:{self.environment_variables.run_id or ''}"]
+        files = Files(self.environment_variables.url, self.environment_variables.token)
+        file_id = files.upload_file(source_file_path, tags=tags, is_permanent=False)
+        logging.info(f"Screenshot uploaded as SAPI artifact, file ID: {file_id}")
 
 
 """
