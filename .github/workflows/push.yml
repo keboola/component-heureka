@@ -22,7 +22,7 @@ jobs:
       is_semantic_tag: ${{ steps.tag.outputs.is_semantic_tag }}
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Docker login
       if: env.DOCKERHUB_TOKEN
@@ -34,11 +34,15 @@ jobs:
     - name: Set image tag
       id: tag
       run: |
-        TAG="${GITHUB_REF##*/}"
-        IS_SEMANTIC_TAG=$(echo "$TAG" | grep -q '^v\?[0-9]\+\.[0-9]\+\.[0-9]\+$' && echo true || echo false)
-        echo "Tag = '$TAG', is semantic tag = '$IS_SEMANTIC_TAG'"
-        echo "is_semantic_tag=$IS_SEMANTIC_TAG" >> $GITHUB_OUTPUT
-        echo "app_image_tag=$TAG" >> $GITHUB_OUTPUT
+        REF="${GITHUB_REF##*/}"
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          TAG="$REF"
+        else
+          TAG="$REF-${{ github.run_number }}"
+        fi
+        IS_SEMANTIC_TAG=$(echo "$REF" | grep -q '^[0-9]\+\.[0-9]\+\.[0-9]\+$' && echo true || echo false)
+        echo "is_semantic_tag=$IS_SEMANTIC_TAG" | tee -a $GITHUB_OUTPUT
+        echo "app_image_tag=$TAG" | tee -a $GITHUB_OUTPUT
 
     - name: Push image to ECR
       uses: keboola/action-push-to-ecr@master
@@ -57,7 +61,7 @@ jobs:
       - build
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Pull image from ECR
         uses: keboola/action-pull-from-ecr@master
@@ -72,7 +76,7 @@ jobs:
 
       - name: Run tests
         run: |
-          docker run ${{ env.KBC_DEVELOPERPORTAL_APP }} flake8 . --config=flake8.cfg
+          docker run ${{ env.KBC_DEVELOPERPORTAL_APP }} ruff check .
           echo "Running unit-tests..."
           docker run ${{ env.KBC_DEVELOPERPORTAL_APP }} python -m unittest discover
 
@@ -113,7 +117,7 @@ jobs:
           tag: ${{ needs.build.outputs.app_image_tag }}
 
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Update developer portal properties
         run: |
