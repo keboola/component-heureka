@@ -35,6 +35,14 @@
           "default": "now",
           "description": "End date of the report. Either date in YYYY-MM-DD format or dateparser string i.e. 5 days ago, 1 month ago, yesterday, etc.",
           "propertyOrder": 3
+        },
+        "output_detail": {
+          "type": "boolean",
+          "title": "Output Detailed Data",
+          "default": false,
+          "description": "Output detailed per-item conversion data alongside the daily summary table.",
+          "format": "checkbox",
+          "propertyOrder": 4
         }
       }
     },
@@ -66,6 +74,23 @@
           },
           "description": "If Full load is used, the destination table will be overwritten every run. If incremental load is used, data will be upserted into the destination table.",
           "propertyOrder": 2
+        },
+        "decimal_separator": {
+          "enum": [
+            "comma",
+            "dot"
+          ],
+          "type": "string",
+          "title": "Decimal Separator",
+          "default": "comma",
+          "options": {
+            "enum_titles": [
+              "Comma (1,23) - For backwards compatibility",
+              "Dot (1.23) - Recommended"
+            ]
+          },
+          "description": "Decimal separator used in numeric values. Comma is the default for backwards compatibility. Dot is recommended for new configurations.",
+          "propertyOrder": 3
         }
       }
     }

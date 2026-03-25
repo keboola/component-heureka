@@ -18,13 +18,19 @@ Functionality notes
 Configuration
 =============
 
-First, in the component configuration below, fill in the credentials.
+First, in the component configuration below, fill in the API key.
 Then in the config row, specify the e-shop ID, date for which you want to retrieve the data, and destination table settings.
 
 Output
 ======
 
-Output table contains the following columns: eshop_id,date,pno,conversion_rates,spend,aov,cpc,orders,visits,transaction_revenue
+**Summary table** columns:
+
+eshop_id, date, pno, conversion_rates, spend, aov, cpc, orders, visits, transaction_revenue, visits_free, visits_bidded, visits_not_bidded, orders_free, orders_bidded, orders_not_bidded, revenue_free, revenue_bidded, revenue_not_bidded, spend_without_vat
+
+**Detail table** columns (enabled via "Output Detailed Data" option):
+
+eshop_id, date, product_card_id, product_name, shop_item_id, shop_item_name, click_source, satellite_name, on_bidded_position, portal_category_id, visits_total, visits_free, visits_bidded, visits_not_bidded, costs_with_vat_total, costs_with_vat_bidded, costs_with_vat_not_bidded, costs_without_vat_total, costs_without_vat_bidded, costs_without_vat_not_bidded, orders_total, orders_free, orders_bidded, orders_not_bidded, revenue_total, revenue_free, revenue_bidded, revenue_not_bidded
 
 Development
 -----------

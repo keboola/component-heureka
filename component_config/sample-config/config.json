@@ -11,8 +11,7 @@
   },
   "parameters": {
     "credentials": {
-      "email": "info@example.com",
-      "#password": "password"
+      "#api_key": "YOUR_API_KEY_HERE"
     },
     "report_settings": {
     "eshop_id": "",

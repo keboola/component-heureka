@@ -9,34 +9,18 @@
       "type": "object",
       "title": "Authorization",
       "required": [
-        "email",
-        "#password"
+        "#api_key"
       ],
       "properties": {
-        "email": {
-          "type": "string",
-          "title": "Email",
-          "propertyOrder": 1
-        },
-        "#password": {
+        "#api_key": {
           "type": "string",
           "format": "password",
-          "title": "Password",
-          "propertyOrder": 2
+          "title": "Heureka API Key",
+          "description": "API key from your Heureka account. You can find it at https://sluzby.heureka.cz/statistics-and-reports/conversion-measurement",
+          "propertyOrder": 1
         }
       },
       "propertyOrder": 1
-    },
-    "country": {
-      "type": "string",
-      "title": "Heureka Site Country",
-      "propertyOrder": 2,
-      "description": "Select from which Heureka site you want to extract data.",
-      "enum": [
-        "cz",
-        "sk"
-      ],
-      "default": "cz"
     }
   }
 }

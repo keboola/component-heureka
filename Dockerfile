@@ -1,26 +1,21 @@
-FROM python:3.12-slim
-ENV PYTHONIOENCODING=utf-8
-
-COPY /src /code/src/
-COPY /tests /code/tests/
-COPY /scripts /code/scripts/
-COPY pyproject.toml /code/pyproject.toml
-COPY deploy.sh /code/deploy.sh
-
-# install gcc to be able to build packages - e.g. required by regex, dateparser, also required for pandas
-RUN apt-get update && apt-get install -y build-essential \
-    xvfb \
-    xauth
-
-RUN pip install uv && cd /code && uv pip install --system .[dev]
-
-RUN playwright install --with-deps chromium
-
-# workaround from https://github.com/stitionai/devika/issues/297
-RUN useradd -m -s /bin/bash myuser
-USER myuser
-RUN playwright install chromium
+FROM python:3.13-slim AS base
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /code/
+COPY pyproject.toml uv.lock ./
 
-CMD ["sh", "-c", "Xvfb :99 -nolisten tcp -nolisten unix -screen 0 1024x768x24 & export DISPLAY=:99 && python -u /code/src/component.py"]
+ENV UV_PROJECT_ENVIRONMENT="/usr/local/"
+RUN uv sync --no-dev --frozen
+
+COPY src/ src/
+COPY scripts/ scripts/
+COPY deploy.sh .
+
+FROM base AS test
+RUN uv sync --all-groups --frozen
+COPY tests/ tests/
+RUN uv run ruff check src/ tests/
+CMD ["uv", "run", "pytest", "tests/", "-v"]
+
+FROM base AS production
+CMD ["python", "-u", "/code/src/component.py"]

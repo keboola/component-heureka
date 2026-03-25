@@ -1,243 +1,251 @@
-"""
-Template Component main class.
-
-"""
-
-import os
-import tempfile
 import logging
 import datetime
 
-from kbcstorage.files import Files
+import backoff
+import requests
 from keboola.component.base import ComponentBase
 from keboola.component.exceptions import UserException
-from configuration import Configuration
-from requests_html import HTMLSession
-from keboola.utils import parse_datetime_interval, split_dates_to_chunks
 from keboola.csvwriter import ElasticDictWriter
-from playwright.sync_api import sync_playwright
-import backoff
+from keboola.utils import parse_datetime_interval, split_dates_to_chunks
+from pydantic import ValidationError
 
+from configuration import Configuration, DecimalSeparator
 
-class TableNotFoundException(Exception):
-    pass
+API_BASE_URL = "https://api.heureka.group/v1"
+
+SUMMARY_COLUMNS = [
+    "eshop_id",
+    "date",
+    "pno",
+    "conversion_rates",
+    "spend",
+    "aov",
+    "cpc",
+    "orders",
+    "visits",
+    "transaction_revenue",
+    "visits_free",
+    "visits_bidded",
+    "visits_not_bidded",
+    "orders_free",
+    "orders_bidded",
+    "orders_not_bidded",
+    "revenue_free",
+    "revenue_bidded",
+    "revenue_not_bidded",
+    "spend_without_vat",
+]
+
+DETAIL_COLUMNS = [
+    "eshop_id",
+    "date",
+    "product_card_id",
+    "product_name",
+    "shop_item_id",
+    "shop_item_name",
+    "click_source",
+    "satellite_name",
+    "on_bidded_position",
+    "portal_category_id",
+    "visits_total",
+    "visits_free",
+    "visits_bidded",
+    "visits_not_bidded",
+    "costs_with_vat_total",
+    "costs_with_vat_bidded",
+    "costs_with_vat_not_bidded",
+    "costs_without_vat_total",
+    "costs_without_vat_bidded",
+    "costs_without_vat_not_bidded",
+    "orders_total",
+    "orders_free",
+    "orders_bidded",
+    "orders_not_bidded",
+    "revenue_total",
+    "revenue_free",
+    "revenue_bidded",
+    "revenue_not_bidded",
+]
 
 
 class Component(ComponentBase):
     def __init__(self):
         super().__init__()
-        self.session = HTMLSession()
+        self.cfg = self._load_configuration()
 
-    def _init_configuration(self) -> None:
-        self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
-        self.cfg: Configuration = Configuration.load_from_dict(self.configuration.parameters)
+    def _load_configuration(self) -> Configuration:
+        try:
+            return Configuration(**self.configuration.parameters)
+        except ValidationError as e:
+            raise UserException(f"Invalid configuration: {e}") from e
 
     def run(self):
-        """
-        Main execution code
-        """
-
-        self._init_configuration()
-
-        if self.cfg.country not in ("cz", "sk"):
-            raise UserException("Country not supported")
-
         eshop_id = self.cfg.report_settings.eshop_id
         date_from, date_to = parse_datetime_interval(
             self.cfg.report_settings.date_from, self.cfg.report_settings.date_to
         )
 
         if (datetime.datetime.now() - date_from).days > 365:
-            print("Cannot get data older than 1 year, downloading data for the last 365 days.")
+            logging.info("Cannot get data older than 1 year, downloading data for the last 365 days.")
             date_from = datetime.datetime.now() - datetime.timedelta(days=365)
 
         dates = split_dates_to_chunks(date_from, date_to, 0)
-
-        self.login()
-
         table_name = self.cfg.destination.table_name or eshop_id
 
-        table_def = self.create_out_table_definition(
+        summary_def = self.create_out_table_definition(
             name=f"{table_name}.csv",
             incremental=self.cfg.destination.load_type.is_incremental(),
             primary_key=["eshop_id", "date"],
         )
 
-        with ElasticDictWriter(
-            table_def.full_path,
-            fieldnames=[
-                "eshop_id",
-                "date",
-                "pno",
-                "conversion_rates",
-                "spend",
-                "aov",
-                "cpc",
-                "orders",
-                "visits",
-                "transaction_revenue",
-            ],
-        ) as writer:
-            writer.writeheader()
+        detail_def = None
+        if self.cfg.report_settings.output_detail:
+            detail_def = self.create_out_table_definition(
+                name=f"{table_name}_detail.csv",
+                incremental=self.cfg.destination.load_type.is_incremental(),
+                primary_key=["eshop_id", "date", "product_card_id", "click_source"],
+            )
 
-            for date in dates:
-                logging.info(f"Downloading data for date: {date['start_date']}")
-                try:
-                    stats = self.get_stats_for_date(self.session, date, eshop_id)
-                    writer.writerow(stats)
-                except TableNotFoundException as e:
-                    logging.warning(f"Error while downloading data for date: {date['start_date']}: {e}")
+        use_decimal_comma = self.cfg.destination.decimal_separator == DecimalSeparator.comma
 
-        self.write_manifest(table_def)
+        with ElasticDictWriter(summary_def.full_path, fieldnames=SUMMARY_COLUMNS) as summary_writer:
+            summary_writer.writeheader()
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3, giveup=lambda e: isinstance(e, UserException))
-    def login(self):
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)
-            page = None
+            detail_writer = None
             try:
-                context = browser.new_context()
-                page = context.new_page()
-                page.set_default_timeout(20000)
-                page.goto(f"https://heureka.{self.cfg.country}")
+                if detail_def:
+                    detail_writer = ElasticDictWriter(detail_def.full_path, fieldnames=DETAIL_COLUMNS)
+                    detail_writer.__enter__()
+                    detail_writer.writeheader()
 
-                try:
-                    page.click("#didomi-notice-agree-button")
-                except Exception:
-                    logging.info("No cookies popup")
+                for date_chunk in dates:
+                    date_str = date_chunk["start_date"]
+                    logging.info(f"Fetching data for date: {date_str}")
 
-                if self.cfg.country == "cz":
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    page.get_by_text("Administrace e-shopu").click()
-                    page.wait_for_selector('button:has-text("Přihlásit se e-mailem")')
-                    page.fill("#login-email", self.cfg.credentials.email)
-                    page.fill("#login-password", self.cfg.credentials.pswd_password)
-                    page.click('button:has-text("Přihlásit se e-mailem")')
+                    conversions = self._fetch_conversions(date_str)
 
-                elif self.cfg.country == "sk":
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    page.get_by_text("Administrácia e-shopu").click()
-                    page.wait_for_selector('button:has-text("Prihlásiť sa e-mailom")')
-                    page.fill("#login-email", self.cfg.credentials.email)
-                    page.fill("#login-password", self.cfg.credentials.pswd_password)
-                    page.click('button:has-text("Prihlásiť sa e-mailom")')
+                    if not conversions:
+                        logging.warning(f"No conversion data for {date_str}")
+                        continue
 
-                page.wait_for_load_state("networkidle")
-                if page.query_selector("#login-email") or "sluzby.heureka" not in page.url:
-                    raise UserException(f"Login failed - unexpected post-login page: {page.url}")
+                    row = self._aggregate_daily(eshop_id, date_str, conversions)
+                    summary_writer.writerow(self._format_row(row, use_decimal_comma))
 
-                for cookie in context.cookies():
-                    self.session.cookies.set(cookie["name"], cookie["value"], domain=cookie["domain"])
-
-            except Exception:
-                if page:
-                    logging.warning(f"Login failed at URL: {page.url}")
-                    self.screenshot(page)
-                raise
+                    if detail_writer:
+                        for conv in conversions:
+                            detail_writer.writerow(
+                                self._format_row(self._flatten_conversion(eshop_id, date_str, conv), use_decimal_comma)
+                            )
             finally:
-                browser.close()
+                if detail_writer:
+                    detail_writer.__exit__(None, None, None)
 
-    @backoff.on_exception(backoff.expo, TableNotFoundException, max_tries=3)
-    def get_stats_for_date(self, session, date, eshop_id):
-        if self.cfg.country == "cz":
-            response = session.get(
-                "https://sluzby.heureka.cz/obchody/statistiky/"
-                f"?from={date['start_date']}&to={date['start_date']}&shop={eshop_id}&cat=-4"
-            )
+        self.write_manifest(summary_def)
+        if detail_def:
+            self.write_manifest(detail_def)
 
-            columns_mapping = {
-                "NÃ¡vÅ¡tÄ\x9bvy": "visits",
-                "CPC": "cpc",
-                "NÃ¡klady": "spend",
-                "KonverznÃ­ pomÄ\x9br": "conversion_rates",
-                "Obj": "orders",
-                "PrÅ¯mÄ\x9brnÃ¡ objednÃ¡vka": "aov",
-                "Obrat": "transaction_revenue",
-                "NÃ¡klady zÂ obratu": "pno",
-            }
+    @staticmethod
+    def _format_row(row: dict, use_decimal_comma: bool) -> dict:
+        if not use_decimal_comma:
+            return row
+        return {k: str(v).replace(".", ",") if isinstance(v, float) else v for k, v in row.items()}
 
-        else:
-            response = session.get(
-                "https://sluzby.heureka.sk/obchody/statistiky/"
-                f"?from={date['start_date']}&to={date['start_date']}&shop={eshop_id}&cat=-4"
-            )
+    @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=3)
+    def _fetch_conversions(self, date_str: str) -> list[dict]:
+        headers = {"x-heureka-api-key": self.cfg.credentials.api_key}
+        response = requests.get(
+            f"{API_BASE_URL}/reports/conversions",
+            params={"date": date_str},
+            headers=headers,
+            timeout=60,
+        )
+        if response.status_code == 401:
+            raise UserException("Authentication failed. Check your API key.")
+        if response.status_code == 403:
+            raise UserException("Access forbidden. Check your API key permissions.")
+        response.raise_for_status()
+        return response.json().get("conversions", [])
 
-            columns_mapping = {
-                "NÃ¡vÅ¡tevy": "visits",
-                "CPC": "cpc",
-                "NÃ¡klady": "spend",
-                "KonverznÃ½ pomer": "conversion_rates",
-                "Obj": "orders",
-                "PriemernÃ¡ objednÃ¡vka": "aov",
-                "Obrat": "transaction_revenue",
-                "NÃ¡klady zÂ obratu": "pno",
-            }
+    @staticmethod
+    def _aggregate_daily(eshop_id: str, date_str: str, conversions: list[dict]) -> dict:
+        visits = sum(c["visits"]["total"] for c in conversions)
+        visits_free = sum(c["visits"]["free"] for c in conversions)
+        visits_bidded = sum(c["visits"]["bidded"] for c in conversions)
+        visits_not_bidded = sum(c["visits"]["not_bidded"] for c in conversions)
 
-        try:
-            column_names = [th.text for th in response.html.find("thead", first=True).find("tr")[1].find("th")]
-            table_body = response.html.find("tbody", first=True)
+        spend = sum(c["costs_with_vat"]["total"] for c in conversions)
+        spend_without_vat = sum(c["costs_without_vat"]["total"] for c in conversions)
 
-            if table_body:
-                values = [
-                    value.text.replace("Â\xa0KÄ\x8d", "")
-                    .replace("Â â\x82¬", "")
-                    .replace("%", "")
-                    .replace("Â", "")
-                    .replace(" ", "")
-                    .replace("&nbsp", "")
-                    .replace(" ", "")
-                    for value in table_body.find("tr")[0].find("td")
-                ]
+        orders = sum(c["orders"]["total"] for c in conversions)
+        orders_free = sum(c["orders"]["free"] for c in conversions)
+        orders_bidded = sum(c["orders"]["bidded"] for c in conversions)
+        orders_not_bidded = sum(c["orders"]["not_bidded"] for c in conversions)
 
-                row = {"eshop_id": eshop_id, "date": date["start_date"]}
+        revenue = sum(c["revenue"]["total"] for c in conversions)
+        revenue_free = sum(c["revenue"]["free"] for c in conversions)
+        revenue_bidded = sum(c["revenue"]["bidded"] for c in conversions)
+        revenue_not_bidded = sum(c["revenue"]["not_bidded"] for c in conversions)
 
-                if values[0] == "Celkem":
-                    logging.warning("No data available for the selected period")
-                else:
-                    for column_name, value in zip(column_names, values):
-                        if key := columns_mapping.get(column_name):
-                            row[key] = value
+        cpc = round(spend / visits, 2) if visits > 0 else 0
+        aov = round(revenue / orders, 2) if orders > 0 else 0
+        conversion_rates = round((orders / visits) * 100, 2) if visits > 0 else 0
+        pno = round((spend / revenue) * 100, 2) if revenue > 0 else 0
 
-                return row
+        return {
+            "eshop_id": eshop_id,
+            "date": date_str,
+            "visits": visits,
+            "spend": round(spend, 2),
+            "orders": orders,
+            "transaction_revenue": round(revenue, 2),
+            "cpc": cpc,
+            "aov": aov,
+            "conversion_rates": conversion_rates,
+            "pno": pno,
+            "visits_free": visits_free,
+            "visits_bidded": visits_bidded,
+            "visits_not_bidded": visits_not_bidded,
+            "orders_free": orders_free,
+            "orders_bidded": orders_bidded,
+            "orders_not_bidded": orders_not_bidded,
+            "revenue_free": round(revenue_free, 2),
+            "revenue_bidded": round(revenue_bidded, 2),
+            "revenue_not_bidded": round(revenue_not_bidded, 2),
+            "spend_without_vat": round(spend_without_vat, 2),
+        }
 
-        except AttributeError as e:
-            logging.warning("Table not found, saving response and logging in again")
-            self._save_response_artifact(response)
-            self.login()
-            raise TableNotFoundException(e)
-
-    def _save_response_artifact(self, response):
-        filename = f"heureka-debug-response-{datetime.datetime.now().strftime('%H%M%S')}.html"
-        with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as tmp:
-            tmp.write(response.text)
-            tmp_path = tmp.name
-        try:
-            self._store_sapi_artifact(tmp_path, filename)
-            logging.info(f"Response HTML saved as artifact: {filename}")
-        except Exception as e:
-            logging.warning(f"Failed to save response artifact: {e}")
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-
-    def screenshot(self, page):
-        filename = f"heureka-debug-screen-{datetime.datetime.now().strftime('%H%M%S')}.png"
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            tmp_path = tmp.name
-        try:
-            page.screenshot(path=tmp_path, timeout=5000)
-            self._store_sapi_artifact(tmp_path, filename)
-        except Exception as e:
-            logging.warning(f"Failed to save screenshot artifact: {e}")
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-
-    def _store_sapi_artifact(self, source_file_path: str, filename: str) -> None:
-        tags = ["kds-team.ex-heureka", f"runId:{self.environment_variables.run_id or ''}"]
-        files = Files(self.environment_variables.url, self.environment_variables.token)
-        file_id = files.upload_file(source_file_path, tags=tags, is_permanent=False)
-        logging.info(f"Screenshot uploaded as SAPI artifact, file ID: {file_id}")
+    @staticmethod
+    def _flatten_conversion(eshop_id: str, date_str: str, conv: dict) -> dict:
+        return {
+            "eshop_id": eshop_id,
+            "date": conv.get("date") or date_str,
+            "product_card_id": conv.get("product_card_id"),
+            "product_name": conv.get("product_name"),
+            "shop_item_id": conv.get("shop_item", {}).get("id"),
+            "shop_item_name": conv.get("shop_item", {}).get("name"),
+            "click_source": conv.get("click_source"),
+            "satellite_name": conv.get("satellite_name"),
+            "on_bidded_position": conv.get("on_bidded_position"),
+            "portal_category_id": conv.get("portal_category", {}).get("id"),
+            "visits_total": conv["visits"]["total"],
+            "visits_free": conv["visits"]["free"],
+            "visits_bidded": conv["visits"]["bidded"],
+            "visits_not_bidded": conv["visits"]["not_bidded"],
+            "costs_with_vat_total": conv["costs_with_vat"]["total"],
+            "costs_with_vat_bidded": conv["costs_with_vat"]["bidded"],
+            "costs_with_vat_not_bidded": conv["costs_with_vat"]["not_bidded"],
+            "costs_without_vat_total": conv["costs_without_vat"]["total"],
+            "costs_without_vat_bidded": conv["costs_without_vat"]["bidded"],
+            "costs_without_vat_not_bidded": conv["costs_without_vat"]["not_bidded"],
+            "orders_total": conv["orders"]["total"],
+            "orders_free": conv["orders"]["free"],
+            "orders_bidded": conv["orders"]["bidded"],
+            "orders_not_bidded": conv["orders"]["not_bidded"],
+            "revenue_total": conv["revenue"]["total"],
+            "revenue_free": conv["revenue"]["free"],
+            "revenue_bidded": conv["revenue"]["bidded"],
+            "revenue_not_bidded": conv["revenue"]["not_bidded"],
+        }
 
 
 """
@@ -246,7 +254,6 @@ class Component(ComponentBase):
 if __name__ == "__main__":
     try:
         comp = Component()
-        # this triggers the run method by default and is controlled by the configuration.action parameter
         comp.execute_action()
     except UserException as exc:
         logging.exception(exc)
